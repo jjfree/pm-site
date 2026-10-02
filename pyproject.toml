@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pm-site"
+version = "0.1.0"
+description = "Local-first project overview, effort tracking and editable reporting"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi==0.142.2", "starlette==1.7.0", "uvicorn==0.34.2", "pydantic==2.11.4",
+  "python-multipart==0.0.32", "openpyxl==3.1.5", "python-pptx==1.0.2",
+  "defusedxml==0.7.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "httpx==0.28.1", "ruff==0.11.9"]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
