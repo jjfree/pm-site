@@ -19,6 +19,7 @@ from .db import Store, now
 from .imports import MAX_BYTES, prepare, read_tables, sanitize_headers, suggested_mapping
 from .models import MODELS, Settings
 from .reports import export_table, make_pptx, make_snapshot
+from .runtime import instance_id
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -102,7 +103,12 @@ def create_app(directory=None):
 
     @app.get("/api/health")
     def health():
-        return {"status": "ok", "version": "0.1.0"}
+        return {
+            "status": "ok",
+            "version": "0.1.0",
+            "application": "pm-site",
+            "instance": instance_id(store.directory),
+        }
 
     @app.get("/api/bootstrap")
     def bootstrap():
