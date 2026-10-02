@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import {
   LayoutDashboard,
@@ -331,10 +331,16 @@ function DataTable({
   rows,
   columns,
   onEdit,
+  sortKey,
+  sortDirection,
+  onSort,
 }: {
   rows: Row[];
   columns: [string, string][];
   onEdit?: (r: Row) => void;
+  sortKey?: string;
+  sortDirection?: "asc" | "desc";
+  onSort?: (key: string) => void;
 }) {
   return rows.length ? (
     <div className="table-scroll">
@@ -342,7 +348,31 @@ function DataTable({
         <thead>
           <tr>
             {columns.map(([k, l]) => (
-              <th key={k}>{l}</th>
+              <th
+                key={k}
+                aria-sort={
+                  onSort && sortKey === k
+                    ? sortDirection === "asc"
+                      ? "ascending"
+                      : "descending"
+                    : undefined
+                }
+              >
+                {onSort ? (
+                  <button
+                    className="table-sort"
+                    onClick={() => onSort(k)}
+                    aria-label={`${l}排序${sortKey === k ? (sortDirection === "asc" ? "，目前遞增" : "，目前遞減") : ""}`}
+                  >
+                    {l}
+                    <span aria-hidden="true">
+                      {sortKey === k ? (sortDirection === "asc" ? "▲" : "▼") : "↕"}
+                    </span>
+                  </button>
+                ) : (
+                  l
+                )}
+              </th>
             ))}
             {onEdit && <th />}
           </tr>
@@ -388,16 +418,115 @@ function DataTable({
   );
 }
 
+const timeColumns: [string, string][] = [
+  ["date", "日期"],
+  ["person", "人員"],
+  ["role", "角色"],
+  ["category", "分類"],
+  ["hours", "小時"],
+  ["content", "工作內容"],
+];
+
+function TimeRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => void }) {
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [person, setPerson] = useState("");
+  const [role, setRole] = useState("");
+  const [category, setCategory] = useState("");
+  const [minHours, setMinHours] = useState("");
+  const [maxHours, setMaxHours] = useState("");
+  const [content, setContent] = useState("");
+  const [sortKey, setSortKey] = useState("date");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const options = (key: string) => [...new Set(rows.map((row) => String(row[key] || "")))].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-TW"));
+  const filtered = useMemo(() => {
+    const matches = rows.filter((row) =>
+      (!dateFrom || row.date >= dateFrom) &&
+      (!dateTo || row.date <= dateTo) &&
+      (!person || row.person === person) &&
+      (!role || (role === "__missing__" ? !row.role : row.role === role)) &&
+      (!category || row.category === category) &&
+      (minHours === "" || Number(row.hours) >= Number(minHours)) &&
+      (maxHours === "" || Number(row.hours) <= Number(maxHours)) &&
+      (!content || String(row.content || "").toLocaleLowerCase().includes(content.toLocaleLowerCase()))
+    );
+    return matches.sort((a, b) => {
+      const result = sortKey === "hours"
+        ? Number(a.hours) - Number(b.hours)
+        : String(a[sortKey] || "").localeCompare(String(b[sortKey] || ""), "zh-TW", { numeric: true });
+      return sortDirection === "asc" ? result : -result;
+    });
+  }, [rows, dateFrom, dateTo, person, role, category, minHours, maxHours, content, sortKey, sortDirection]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const first = (currentPage - 1) * pageSize;
+  const displayed = filtered.slice(first, first + pageSize);
+  const updateFilter = (setter: (value: string) => void, value: string) => {
+    setter(value);
+    setPage(1);
+  };
+  const clearFilters = () => {
+    setDateFrom(""); setDateTo(""); setPerson(""); setRole("");
+    setCategory(""); setMinHours(""); setMaxHours(""); setContent("");
+    setPage(1);
+  };
+  const sort = (key: string) => {
+    if (sortKey === key) setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDirection(key === "date" ? "desc" : "asc"); }
+    setPage(1);
+  };
+  return (
+    <>
+      <div className="time-filters">
+        <label>日期起<input type="date" value={dateFrom} onChange={(e) => updateFilter(setDateFrom, e.target.value)} /></label>
+        <label>日期迄<input type="date" value={dateTo} onChange={(e) => updateFilter(setDateTo, e.target.value)} /></label>
+        <label>人員<select value={person} onChange={(e) => updateFilter(setPerson, e.target.value)}>
+          <option value="">全部人員</option>{options("person").map((value) => <option key={value}>{value}</option>)}
+        </select></label>
+        <label>角色<select value={role} onChange={(e) => updateFilter(setRole, e.target.value)}>
+          <option value="">全部角色</option><option value="__missing__">未指定</option>
+          {options("role").map((value) => <option key={value}>{value}</option>)}
+        </select></label>
+        <label>分類<select value={category} onChange={(e) => updateFilter(setCategory, e.target.value)}>
+          <option value="">全部分類</option>{options("category").map((value) => <option key={value}>{value}</option>)}
+        </select></label>
+        <label>小時至少<input type="number" min="0" step="0.01" value={minHours} onChange={(e) => updateFilter(setMinHours, e.target.value)} /></label>
+        <label>小時至多<input type="number" min="0" step="0.01" value={maxHours} onChange={(e) => updateFilter(setMaxHours, e.target.value)} /></label>
+        <label>工作內容<input type="search" placeholder="搜尋內容" value={content} onChange={(e) => updateFilter(setContent, e.target.value)} /></label>
+        <button className="ghost" onClick={clearFilters}>清除篩選</button>
+      </div>
+      {filtered.length ? (
+        <DataTable rows={displayed} columns={timeColumns} onEdit={onEdit} sortKey={sortKey} sortDirection={sortDirection} onSort={sort} />
+      ) : <div className="time-no-results">{rows.length ? "沒有符合篩選的工時紀錄" : "尚無工時紀錄"}</div>}
+      <div className="time-pagination">
+        <span>共 {filtered.length} 筆 · 顯示 {filtered.length ? first + 1 : 0}–{Math.min(first + pageSize, filtered.length)} 筆</span>
+        <div className="time-page-controls">
+          <label>每頁 <select value={pageSize} onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}>
+            {[20, 50, 100].map((size) => <option key={size} value={size}>{size} 筆</option>)}
+          </select></label>
+          <button className="secondary" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>上一頁</button>
+          <span>第 {currentPage} / {pageCount} 頁</span>
+          <button className="secondary" disabled={currentPage >= pageCount} onClick={() => setPage(currentPage + 1)}>下一頁</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 function RecordModal({
   kind,
   row,
   pid,
+  rates,
   close,
   saved,
 }: {
   kind: string;
   row?: Row;
   pid: string;
+  rates: Row[];
   close: () => void;
   saved: () => void;
 }) {
@@ -408,6 +537,9 @@ function RecordModal({
   });
   const [err, setErr] = useState(""),
     [busy, setBusy] = useState(false);
+  const roleOptions = [...new Set(rates.map((rate) => String(rate.role)))].sort();
+  const currentRole = String(form.role || "");
+  const roleChanged = kind === "times" && !!row && !!currentRole && currentRole !== row.role;
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -434,6 +566,7 @@ function RecordModal({
         body.version = row.version;
         if (row.source_id) body.source_id = row.source_id;
         if (row.source_marker) body.source_marker = row.source_marker;
+        if (roleChanged) body.apply_role_to_person = true;
       }
       await api(
         "/records/" + kind + (row ? "/" + row.id : ""),
@@ -499,7 +632,24 @@ function RecordModal({
               >
                 {f.label}
                 {f.required && <b className="required"> *</b>}
-                {f.options ? (
+                {kind === "times" && f.key === "role" ? (
+                  <select
+                    value={currentRole}
+                    onChange={(e) =>
+                      setForm({ ...form, role: e.target.value })
+                    }
+                  >
+                    <option value="">請選擇角色</option>
+                    {currentRole && !roleOptions.includes(currentRole) && (
+                      <option value={currentRole}>{currentRole}（未在單價設定）</option>
+                    )}
+                    {roleOptions.map((role) => (
+                      <option key={role} value={role}>
+                        {role}
+                      </option>
+                    ))}
+                  </select>
+                ) : f.options ? (
                   <select
                     value={String(
                       form[f.key] ??
@@ -542,6 +692,11 @@ function RecordModal({
               </label>
             ))}
           </div>
+          {kind === "times" && roleChanged && (
+            <div className="notice">
+              儲存後，會將此角色套用至本專案同姓名的所有工時紀錄。
+            </div>
+          )}
           {err && <div className="error">{err}</div>}
           <div className="modal-foot">
             {row && (
@@ -1929,23 +2084,21 @@ function App() {
                     </a>
                   </div>
                   <section className="panel">
-                    <DataTable
-                      rows={
-                        tab === "scenarios"
-                          ? analysis.scenarios
-                          : all[tab] || []
-                      }
-                      columns={
-                        tab === "times"
-                          ? [
-                              ["date", "日期"],
-                              ["person", "人員"],
-                              ["role", "角色"],
-                              ["category", "分類"],
-                              ["hours", "小時"],
-                              ["content", "工作內容"],
-                            ]
-                          : tab === "rates"
+                    {tab === "times" ? (
+                      <TimeRecordsTable
+                        key={pid}
+                        rows={all.times || []}
+                        onEdit={(row) => openModal("times", row)}
+                      />
+                    ) : (
+                      <DataTable
+                        rows={
+                          tab === "scenarios"
+                            ? analysis.scenarios
+                            : all[tab] || []
+                        }
+                        columns={
+                          tab === "rates"
                             ? [
                                 ["role", "角色"],
                                 ["person", "人員"],
@@ -1971,16 +2124,17 @@ function App() {
                                   ["invoiced", "已開票"],
                                   ["received", "已收款"],
                                 ]
-                      }
-                      onEdit={(r) =>
-                        openModal(
-                          tab,
-                          tab === "scenarios"
-                            ? all.scenarios.find((s) => s.id === r.id)
-                            : r,
-                        )
-                      }
-                    />
+                        }
+                        onEdit={(r) =>
+                          openModal(
+                            tab,
+                            tab === "scenarios"
+                              ? all.scenarios.find((s) => s.id === r.id)
+                              : r,
+                          )
+                        }
+                      />
+                    )}
                   </section>
                   <div className="notice">
                     售價與內部成本分開設定，單價按有效期間套用；核定收入、開票與收款各自記錄。情境不覆蓋原核定資料。
@@ -2226,6 +2380,7 @@ function App() {
           kind={modal.kind}
           row={modal.row}
           pid={pid}
+          rates={(all.rates || []).filter((rate) => rate.project_id === pid)}
           close={() => setModal(null)}
           saved={reload}
         />

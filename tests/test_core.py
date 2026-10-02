@@ -83,6 +83,45 @@ def test_validation_and_rate_overlap(client, project):
     )
 
 
+def test_assigning_time_role_updates_same_person_and_cost(client, project):
+    pid = project["id"]
+    client.post(
+        "/api/records/rates",
+        json={"project_id": pid, "role": "Engineer", "amount": "4000", "tax_basis": "exclusive"},
+    )
+    entries = [
+        client.post(
+            "/api/records/times",
+            json={"project_id": pid, "person": person, "date": "2025-01-01", "hours": 8, "role": role},
+        ).json()
+        for person, role in [("Member-A", ""), ("Member-A", "Old"), ("Member-B", "")]
+    ]
+    other_project = client.post("/api/records/projects", json={"name": "Other project"}).json()
+    outside = client.post(
+        "/api/records/times",
+        json={"project_id": other_project["id"], "person": "Member-A", "date": "2025-01-01", "hours": 8},
+    ).json()
+
+    response = client.put(
+        f"/api/records/times/{entries[0]['id']}",
+        json={**body(entries[0]), "role": "Engineer", "apply_role_to_person": True},
+    )
+    assert response.status_code == 200
+    rows = client.get(f"/api/records/times?project_id={pid}").json()
+    assert [row["role"] for row in rows] == ["Engineer", "Engineer", ""]
+    assert rows[1]["version"] == entries[1]["version"] + 1
+    assert client.get(f"/api/records/times?project_id={other_project['id']}").json()[0]["role"] == ""
+    assert client.get(f"/api/analytics/{pid}").json()["summary"]["known_labor_cost"] == "8000.00"
+
+    stale = client.put(
+        f"/api/records/times/{entries[0]['id']}",
+        json={**body(entries[0]), "role": "Engineer", "apply_role_to_person": True},
+    )
+    assert stale.status_code == 409
+    assert client.get(f"/api/records/times?project_id={pid}").json() == rows
+    assert client.get(f"/api/records/times?project_id={other_project['id']}").json()[0] == outside
+
+
 def fixtures():
     p = model(
         Project,

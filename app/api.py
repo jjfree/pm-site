@@ -188,13 +188,28 @@ def create_app(directory=None):
     @app.put("/api/records/{kind}/{ident}")
     def update_record(kind: str, ident: str, payload: dict):
         version = payload.pop("version", None)
+        apply_role_to_person = payload.pop("apply_role_to_person", False)
         with store.connect() as db:
             try:
                 data = validate(kind, payload, ident, db)
                 old = store.get(kind, ident, db)
                 if old and kind != "projects" and old["project_id"] != data["project_id"]:
                     raise HTTPException(422, "不可透過編輯移動資料至另一專案")
-                return store.write(kind, data, ident, version, db)
+                if apply_role_to_person:
+                    if kind != "times" or not data["role"]:
+                        raise HTTPException(422, "請選擇工時角色")
+                    if not any(
+                        rate["role"] == data["role"] for rate in store.list("rates", data["project_id"], db)
+                    ):
+                        raise HTTPException(422, "角色已不在單價設定中，請重新整理")
+                saved = store.write(kind, data, ident, version, db)
+                if apply_role_to_person:
+                    for entry in store.list("times", data["project_id"], db):
+                        if entry["id"] != ident and entry["person"] == data["person"] and entry["role"] != data["role"]:
+                            updated = {key: value for key, value in entry.items() if key not in {"id", "version", "created", "updated"}}
+                            updated["role"] = data["role"]
+                            store.write("times", updated, entry["id"], entry["version"], db)
+                return saved
             except KeyError as exc:
                 raise HTTPException(404, "紀錄不存在") from exc
             except ValueError as exc:
