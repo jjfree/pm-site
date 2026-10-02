@@ -23,7 +23,7 @@ class Project(Record):
     hours_per_day: Decimal | None = Field(default=None, gt=0, le=24)
     budget: Decimal | None = Field(default=None, ge=0, max_digits=16, decimal_places=2)
     revenue: Decimal | None = Field(default=None, ge=0, max_digits=16, decimal_places=2)
-    etc: Decimal | None = Field(default=None, ge=0, max_digits=16, decimal_places=2)
+    eac: Decimal | None = Field(default=None, ge=0, max_digits=16, decimal_places=2)
     other_cost: Decimal = Field(default=Decimal("0"), ge=0, max_digits=16, decimal_places=2)
     tax_basis: Literal["unknown", "inclusive", "exclusive"] = "unknown"
     budget_start: date | None = None

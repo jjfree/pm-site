@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def now():
@@ -18,7 +18,8 @@ class Store:
         directory.mkdir(parents=True, exist_ok=True)
         self.path = directory / "projects.sqlite3"
         with self.connect() as db:
-            if db.execute("PRAGMA user_version").fetchone()[0] > SCHEMA_VERSION:
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version > SCHEMA_VERSION:
                 raise ValueError("資料庫版本較新，請使用相容的程式版本")
             db.executescript("""
               CREATE TABLE IF NOT EXISTS records (
@@ -35,8 +36,40 @@ class Store:
                 id TEXT PRIMARY KEY, payload TEXT NOT NULL);
               CREATE TABLE IF NOT EXISTS reports (
                 id TEXT PRIMARY KEY, payload TEXT NOT NULL, at TEXT NOT NULL);
-              PRAGMA user_version=1;
             """)
+            if version < 2:
+                self.migrate_eac(db)
+            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    def migrate_eac(self, db):
+        from .analytics import amount, money, summarize
+
+        projects = self.list("projects", db=db)
+        if projects:
+            # Preserve a complete pre-migration database, including historical report snapshots.
+            archive = self.directory / "backups"
+            archive.mkdir(exist_ok=True)
+            target = archive / ("backup-before-eac-" + uuid4().hex + ".sqlite3")
+            with sqlite3.connect(target) as backup:
+                db.backup(backup)
+                if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise ValueError("遷移前備份完整性檢查失敗")
+        for project in projects:
+            payload = json.loads(
+                db.execute("SELECT payload FROM records WHERE id=?", (project["id"],)).fetchone()[0]
+            )
+            if "eac" not in payload:
+                actual = summarize(
+                    project, self.list("times", project["id"], db), self.list("rates", project["id"], db)
+                )["actual_cost"]
+                remaining = amount(payload.get("etc"))
+                payload["eac"] = (
+                    money(amount(actual) + remaining)
+                    if actual is not None and remaining is not None
+                    else None
+                )
+            payload.pop("etc", None)
+            self.write("projects", payload, project["id"], project["version"], db)
 
     @contextmanager
     def connect(self):

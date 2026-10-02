@@ -27,8 +27,7 @@ def select_rate(rates, role, person, day, purpose):
 
 def summarize(project, times, rates, start=None, end=None):
     selected = [t for t in times if (not start or t["date"] >= start) and (not end or t["date"] <= end)]
-    hours, known_cost, missing = Decimal("0"), Decimal("0"), 0
-    mapped_hours = Decimal("0")
+    hours = Decimal("0")
     monthly, categories, people = defaultdict(Decimal), defaultdict(Decimal), defaultdict(Decimal)
     hpd = amount(project.get("hours_per_day"))
     for t in selected:
@@ -37,29 +36,34 @@ def summarize(project, times, rates, start=None, end=None):
         monthly[t["date"][:7]] += hrs
         categories[t.get("category") or "未分類"] += hrs
         people[t["person"]] += hrs
-        r = select_rate(rates, t.get("role", ""), t["person"], t["date"], "cost")
-        if (
-            r is None
-            or (r["unit"] == "day" and hpd is None)
-            or r["tax_basis"] != project["tax_basis"]
-            or r["tax_basis"] == "unknown"
-        ):
-            missing += 1
-            continue
-        known_cost += hrs * amount(r["amount"]) / (hpd if r["unit"] == "day" else Decimal("1"))
-        mapped_hours += hrs
-    total = known_cost + amount(project["other_cost"]) if missing == 0 else None
-    # Period-filtered effort cannot be compared with a whole-project completion forecast.
+
+    def labor_cost(entries):
+        cost, mapped, missing = Decimal("0"), Decimal("0"), 0
+        for t in entries:
+            r = select_rate(rates, t.get("role", ""), t["person"], t["date"], "cost")
+            if (
+                r is None
+                or (r["unit"] == "day" and hpd is None)
+                or r["tax_basis"] != project["tax_basis"]
+                or r["tax_basis"] == "unknown"
+            ):
+                missing += 1
+                continue
+            hrs = amount(t["hours"])
+            cost += hrs * amount(r["amount"]) / (hpd if r["unit"] == "day" else Decimal("1"))
+            mapped += hrs
+        return cost, mapped, missing
+
+    known_cost, mapped_hours, missing = labor_cost(selected)
+    # Date filters affect actual effort; the entered forecast always covers the whole project.
     scope_matches = not start and not end
+    full_cost, _, full_missing = (known_cost, mapped_hours, missing) if scope_matches else labor_cost(times)
+    total = full_cost + amount(project["other_cost"]) if full_missing == 0 else None
     budget_scope = not project.get("budget_start") and not project.get("budget_end")
-    etc = amount(project.get("etc"))
-    eac = total + etc if total is not None and etc is not None and scope_matches else None
+    eac = amount(project.get("eac"))
+    etc = eac - total if eac is not None and total is not None else None
     revenue = amount(project.get("revenue"))
-    profit = (
-        revenue - eac
-        if revenue is not None and eac is not None and project["tax_basis"] != "unknown"
-        else None
-    )
+    profit = revenue - eac if revenue is not None and eac is not None else None
 
     def series(data):
         return [{"name": k, "hours": float(v)} for k, v in sorted(data.items())]
@@ -68,17 +72,19 @@ def summarize(project, times, rates, start=None, end=None):
         "hours": str(hours),
         "md": money(hours / hpd) if hpd else None,
         "known_labor_cost": money(known_cost),
-        "actual_cost": money(total) if scope_matches else None,
+        "actual_cost": money(total),
         "missing_rate_rows": missing,
+        "full_missing_rate_rows": full_missing,
         "mapped_hours": str(mapped_hours),
         "rows": len(selected),
         "eac": money(eac),
+        "etc": money(etc),
         "profit": money(profit),
-        "budget": project.get("budget") if budget_scope and scope_matches else None,
+        "budget": project.get("budget") if budget_scope else None,
         "revenue": project.get("revenue"),
         "currency": project["currency"],
         "tax_basis": project["tax_basis"],
-        "scope_matches": scope_matches and budget_scope,
+        "scope_matches": budget_scope,
         "monthly": series(monthly),
         "categories": series(categories),
         "people": series(people),
@@ -101,11 +107,7 @@ def evaluate_scenario(project, scenario, rates, summary):
     delta = amount(scenario.get("cost_change"))
     eac = amount(summary.get("eac"))
     revised_cost = eac + delta if eac is not None and delta is not None else None
-    profit = (
-        revised - revised_cost
-        if revised is not None and revised_cost is not None and project["tax_basis"] != "unknown"
-        else None
-    )
+    profit = revised - revised_cost if revised is not None and revised_cost is not None else None
     return {
         **scenario,
         "replacement_revenue": money(extra),

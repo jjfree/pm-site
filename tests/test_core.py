@@ -89,7 +89,7 @@ def fixtures():
         name="Synthetic",
         hours_per_day=8,
         revenue=200000,
-        etc=20000,
+        eac=27200,
         budget=90000,
         tax_basis="exclusive",
     )
@@ -112,14 +112,17 @@ def test_cross_year_cost_and_filtered_scope():
     assert s["profit"] == "172800.00"
     filtered = summarize(p, times, rates, "2025-01-01")
     assert filtered["known_labor_cost"] == "4000.00"
-    assert filtered["eac"] is None and filtered["actual_cost"] is None and filtered["budget"] is None
+    assert filtered["eac"] == "27200.00" and filtered["profit"] == "172800.00"
+    assert filtered["actual_cost"] == "7200.00" and filtered["budget"] == "90000"
+    assert filtered["etc"] == "20000.00"
 
 
 def test_missing_is_not_zero_and_tax_basis():
     p, times, rates = fixtures()
     s = summarize(p, times, rates[:1])
     assert s["known_labor_cost"] == "3200.00" and s["missing_rate_rows"] == 1
-    assert s["eac"] is None and s["profit"] is None
+    assert s["actual_cost"] is None
+    assert s["eac"] == "27200.00" and s["profit"] == "172800.00"
     rates[1]["tax_basis"] = "inclusive"
     assert summarize(p, times, rates)["actual_cost"] is None
     p["hours_per_day"] = None
@@ -141,7 +144,7 @@ def test_person_rate_and_scenario_unknown():
     scenario.update(billable_md="2", sale_role="Engineer", rate_date="2025-01-01", cost_change="1000")
     result = evaluate_scenario(p, scenario, rates, s)
     assert result["replacement_revenue"] == "16000.00" and result["net_revenue_decrease"] == "14000.00"
-    assert result["revised_eac"] == "28700.00"
+    assert result["revised_eac"] == "28200.00"
     scenario["additional_revenue"] = "0"
     assert evaluate_scenario(p, scenario, rates, s)["replacement_revenue"] == "0.00"
 
@@ -232,5 +235,10 @@ def test_long_report_content_fits_and_is_retained():
     for slide in prs.slides:
         for shape in slide.shapes:
             assert shape.top + shape.height <= prs.slide_height
-    assert any("完整的專案摘要" in shape.text for slide in prs.slides for shape in slide.shapes if shape.has_text_frame)
+    assert any(
+        "完整的專案摘要" in shape.text
+        for slide in prs.slides
+        for shape in slide.shapes
+        if shape.has_text_frame
+    )
     assert p["name"] in prs.slides[0].notes_slide.notes_text_frame.text

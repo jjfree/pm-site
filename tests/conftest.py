@@ -18,7 +18,7 @@ def project(client):
             "name": "Synthetic project",
             "revenue": "200000",
             "budget": "90000",
-            "etc": "20000",
+            "eac": "20000",
             "hours_per_day": "8",
             "tax_basis": "exclusive",
         },

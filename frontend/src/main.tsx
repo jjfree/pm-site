@@ -151,7 +151,7 @@ const schemas: Record<string, Field[]> = {
     },
     { key: "budget", label: "成本預算", type: "number" },
     { key: "revenue", label: "核定收入", type: "number" },
-    { key: "etc", label: "剩餘成本估算 ETC", type: "number" },
+    { key: "eac", label: "預計完成成本 EAC", type: "number" },
     { key: "other_cost", label: "已投入其他成本", type: "number" },
     { key: "budget_start", label: "預算範圍起日（空白＝全期）", type: "date" },
     { key: "budget_end", label: "預算範圍迄日", type: "date" },
@@ -1741,7 +1741,7 @@ function App() {
                       <span className="stat-note">{summary.rows} 筆紀錄</span>
                     </div>
                     <div className="stat">
-                      <span>已映射人工成本</span>
+                      <span>選定期間人工成本</span>
                       <strong>{num(summary.known_labor_cost)}</strong>
                       <span className="stat-note">
                         {summary.currency} · {name(summary.tax_basis)}
@@ -1750,7 +1750,9 @@ function App() {
                     <div className="stat">
                       <span>預計完成成本 EAC</span>
                       <strong>{num(summary.eac)}</strong>
-                      <span className="stat-note">全期已投入＋剩餘估算</span>
+                      <span className="stat-note">
+                        專案設定的全期預計完成成本
+                      </span>
                     </div>
                     <div className="stat">
                       <span>成本預算</span>
@@ -1784,17 +1786,30 @@ function App() {
                       <strong>{num(summary.profit)}</strong>
                       <span className="stat-note">全期核定收入－EAC</span>
                     </div>
+                    <div className="stat">
+                      <span>剩餘成本 ETC</span>
+                      <strong>{num(summary.etc)}</strong>
+                      <span className="stat-note">
+                        EAC－全期已投入成本 AC（自動）
+                      </span>
+                    </div>
                   </div>
                   {summary.missing_rate_rows > 0 && (
                     <div className="notice">
                       {summary.missing_rate_rows}{" "}
                       筆缺少角色、有效單價、人天換算或一致稅別；目前已映射{" "}
-                      {num(summary.mapped_hours)} 小時。完整成本仍待估。
+                      {num(summary.mapped_hours)} 小時。
+                    </div>
+                  )}
+                  {summary.full_missing_rate_rows > 0 && (
+                    <div className="notice">
+                      全期有 {summary.full_missing_rate_rows}{" "}
+                      筆工時尚無完整成本映射，AC 與 ETC 保留待估。
                     </div>
                   )}
                   {(start || end) && (
                     <div className="notice">
-                      目前篩選工時期間。全專案成本與完工預估保留待估，請切回全期查看。
+                      目前篩選工時期間；AC、EAC、ETC、核定收入與預估餘額維持專案全期數值。
                     </div>
                   )}
                   <div className="two-columns">

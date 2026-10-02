@@ -211,12 +211,14 @@ def make_pptx(snapshot, sections):
         text(
             s,
             f"累計工時  {summary['hours']} 小時\n預計完成成本  {summary['eac'] or '待估'}\n"
+            f"全期已投入成本  {summary['actual_cost'] or '待估'}\n剩餘成本  {summary.get('etc') or '待估'}\n"
+            f"預估餘額  {summary['profit'] or '待估'}\n"
             f"缺少成本單價  {summary['missing_rate_rows']} 筆",
             0.7,
             1.6,
             4,
             3.7,
-            24,
+            20,
         )
         if summary["monthly"]:
             data = CategoryChartData()

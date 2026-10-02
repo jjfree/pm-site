@@ -3,8 +3,12 @@
 import argparse
 import shutil
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.db import SCHEMA_VERSION  # noqa: E402
 
 
 def restore(source, directory):
@@ -15,7 +19,7 @@ def restore(source, directory):
     with sqlite3.connect(source.as_uri() + "?mode=ro", uri=True) as db:
         if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
             raise ValueError("Backup integrity check failed")
-        if db.execute("PRAGMA user_version").fetchone()[0] != 1:
+        if not 1 <= db.execute("PRAGMA user_version").fetchone()[0] <= SCHEMA_VERSION:
             raise ValueError("Unsupported backup schema")
         tables = {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {"records", "audits", "batches", "profiles", "reports"} <= tables:

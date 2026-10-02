@@ -29,7 +29,7 @@ def seed(store):
                 summary="此專案為完全合成的示範資料，可用來體驗管理流程。",
                 budget=budget,
                 revenue=str(int(budget) * 2),
-                etc="120000",
+                eac="159600",
                 hours_per_day="8",
                 tax_basis="exclusive",
                 start=str(today - timedelta(days=120)),
