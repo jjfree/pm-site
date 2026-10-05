@@ -10,7 +10,7 @@ from threading import Thread
 
 import pytest
 
-from app.runtime import instance_id
+from app.runtime import instance_id, revision_id
 from scripts.check_server import server_status
 
 
@@ -44,9 +44,16 @@ def test_available_port():
 
 
 def test_same_instance_and_different_workspace():
-    with server({"status": "ok", "application": "pm-site", "instance": "synthetic-instance"}) as port:
+    with server(
+        {"status": "ok", "application": "pm-site", "instance": "synthetic-instance", "revision": revision_id()}
+    ) as port:
         assert server_status(port, "synthetic-instance") == "same"
         assert server_status(port, "other-instance") == "occupied"
+
+
+def test_stale_instance():
+    with server({"status": "ok", "application": "pm-site", "instance": "synthetic-instance"}) as port:
+        assert server_status(port, "synthetic-instance") == "stale"
 
 
 @pytest.mark.parametrize(
@@ -71,7 +78,7 @@ def test_health_identity_has_no_local_paths(client, tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="Windows launcher integration")
 @pytest.mark.parametrize("matching", [True, False])
-def test_windows_launcher_reuses_only_this_instance(tmp_path, matching):
+def test_windows_launcher_refuses_unverified_process(tmp_path, matching):
     root = Path(__file__).resolve().parents[1]
     expected = instance_id(tmp_path)
     with server(
@@ -94,5 +101,5 @@ def test_windows_launcher_reuses_only_this_instance(tmp_path, matching):
             capture_output=True,
             timeout=15,
         )
-        assert (result.returncode == 0) is matching
-        assert server_status(port, expected) == ("same" if matching else "occupied")
+        assert result.returncode != 0
+        assert server_status(port, expected) == ("stale" if matching else "occupied")

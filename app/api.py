@@ -19,7 +19,7 @@ from .db import Store, now
 from .imports import MAX_BYTES, prepare, read_tables, sanitize_headers, suggested_mapping
 from .models import MODELS, Settings
 from .reports import export_table, make_pptx, make_snapshot
-from .runtime import instance_id
+from .runtime import instance_id, revision_id
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -28,6 +28,7 @@ def create_app(directory=None):
     store = Store(Path(directory or os.getenv("PM_DATA_DIR", ROOT / "data")))
     app = FastAPI(title="PM Site", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.store = store
+    revision = revision_id()
     csrf, sessions, previews = secrets.token_urlsafe(32), set(), {}
 
     def read_settings():
@@ -62,7 +63,7 @@ def create_app(directory=None):
             "img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; "
             "frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
         )
-        if request.url.path.startswith("/api/"):
+        if request.url.path.startswith("/api/") or request.url.path in {"/", "/index.html"}:
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -108,6 +109,8 @@ def create_app(directory=None):
             "version": "0.1.0",
             "application": "pm-site",
             "instance": instance_id(store.directory),
+            "revision": revision,
+            "pid": os.getpid(),
         }
 
     @app.get("/api/bootstrap")

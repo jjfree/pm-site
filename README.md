@@ -11,9 +11,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup.ps1
 scripts\start.bat
 ```
 
-瀏覽器開啟 `http://127.0.0.1:8765`。初次安裝需要下載套件；安裝後日常操作與匯出不需要網路。已附前端建置檔，日常使用不需要 Node.js。關閉終端機或 Ctrl+C 即可停止。
+瀏覽器開啟 `http://127.0.0.1:8765`。初次安裝需要下載套件；安裝後日常操作與匯出不需要網路。已附前端建置檔，日常使用不需要 Node.js。關閉終端機或 Ctrl+C 即可停止。重新執行 `start.bat` 會重啟同一工作空間與資料目錄的服務，載入更新後的程式。
 
-如果 Python 不在 PATH，可透過 `scripts/setup.ps1 -PythonCommand "完整的 python.exe 路徑"` 指定。重複啟動時，若同一個工作空間與資料目錄已在運行，會直接開啟現有頁面。其他程式或不同工作空間占用 Port 時，使用 `scripts/start.ps1 -Port 8766`；程式不會停止其他服務。
+如果 Python 不在 PATH，可透過 `scripts/setup.ps1 -PythonCommand "完整的 python.exe 路徑"` 指定。其他程式或不同工作空間占用 Port 時，使用 `scripts/start.ps1 -Port 8766`；程式不會停止其他服務。
 
 ## 主要功能
 

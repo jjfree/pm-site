@@ -691,9 +691,36 @@ td small {
 }
 .tabs button.tab-action {
   margin-left: auto;
+  padding: 8px 12px;
+  border-radius: 5px;
+  background: #e8f4ef;
+  color: #16877d;
+  font-weight: 600;
+  white-space: nowrap;
 }
 .tabs a.tab-action {
   margin-left: 0;
+}
+.other-cost-shortcut {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  width: 100%;
+  margin-bottom: 22px;
+  padding: 13px 15px;
+  border: 1px solid #cce2dd;
+  border-radius: 6px;
+  background: #f3faf7;
+  color: #3d6f69;
+  text-align: left;
+  font-size: 11px;
+  cursor: pointer;
+}
+.other-cost-shortcut strong {
+  color: #235b54;
+  font-size: 12px;
 }
 .other-cost-editor {
   margin-top: 22px;
@@ -1200,6 +1227,7 @@ footer span {
   }
   .tabs {
     gap: 15px;
+    flex-wrap: wrap;
   }
   .tabs button {
     font-size: 11px;

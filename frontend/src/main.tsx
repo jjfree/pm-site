@@ -551,6 +551,7 @@ function RecordModal({
   });
   const [err, setErr] = useState(""),
     [busy, setBusy] = useState(false);
+  const costEditorRef = useRef<HTMLElement>(null);
   const roleOptions = [...new Set(rates.map((rate) => String(rate.role)))].sort();
   const currentRole = String(form.role || "");
   const roleChanged = kind === "times" && !!row && !!currentRole && currentRole !== row.role;
@@ -651,6 +652,17 @@ function RecordModal({
           </button>
         </div>
         <form onSubmit={submit}>
+          {kind === "projects" && (
+            <button
+              type="button"
+              className="other-cost-shortcut"
+              onClick={() => costEditorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            >
+              <span>已投入其他成本 · 可輸入多筆</span>
+              <strong>{costItems.length} 筆 · {num(otherCostTotal)} {form.currency || "TWD"}</strong>
+              <span>編輯明細 ↓</span>
+            </button>
+          )}
           <div className="form-grid">
             {schemas[kind].map((f) => (
               <label
@@ -720,7 +732,7 @@ function RecordModal({
             ))}
           </div>
           {kind === "projects" && (
-            <section className="other-cost-editor">
+            <section className="other-cost-editor" ref={costEditorRef}>
               <div className="other-cost-heading">
                 <div>
                   <strong>已投入其他成本</strong>

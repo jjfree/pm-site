@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.runtime import instance_id  # noqa: E402
+from app.runtime import instance_id, revision_id  # noqa: E402
 
 
 def server_status(port, expected=None):
@@ -34,7 +34,7 @@ def server_status(port, expected=None):
             and health.get("application") == "pm-site"
             and health.get("instance") == (expected or instance_id())
         ):
-            return "same"
+            return "same" if health.get("revision") == revision_id() else "stale"
     except (OSError, ValueError, http.client.HTTPException):
         pass
     finally:
