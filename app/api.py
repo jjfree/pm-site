@@ -164,9 +164,12 @@ def create_app(directory=None):
     @app.post("/api/records/{kind}")
     def create_record(kind: str, payload: dict):
         with store.connect() as db:
+            defaults = read_settings()["sale_rates"] if kind == "projects" else []
+            if any(rate["tax_basis"] == "unknown" for rate in defaults):
+                raise HTTPException(422, "預設人天售價有未設定稅別；請先在本機設定選擇含稅或未稅")
             saved = store.write(kind, validate(kind, payload, db=db), db=db)
             if kind == "projects":
-                for default in read_settings()["sale_rates"]:
+                for default in defaults:
                     rate = {**default, "project_id": saved["id"], "purpose": "sale", "unit": "day"}
                     store.write("rates", validate("rates", rate, db=db), db=db)
             return saved
@@ -181,6 +184,8 @@ def create_app(directory=None):
             settings = Settings.model_validate(payload).model_dump(mode="json")
         except ValidationError as exc:
             raise HTTPException(422, "請檢查角色、金額、稅別或重複角色") from exc
+        if any(rate["tax_basis"] == "unknown" for rate in settings["sale_rates"]):
+            raise HTTPException(422, "預設人天售價稅別必填；請選擇含稅或未稅")
         with store.connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO profiles VALUES('local-settings',?)",

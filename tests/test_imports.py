@@ -79,11 +79,21 @@ def test_deliverable_refresh_preserves_manual_conclusions(client, project):
 
 
 def test_batch_rolls_back_on_validation_conflict(client, project):
-    u = upload(client, b"role,amount,start\nEngineer,3200,2024-01-01\nEngineer,4000,2024-02-01\n")
+    u = upload(client, b"role,amount,start,tax_basis\nEngineer,3200,2024-01-01,exclusive\nEngineer,4000,2024-02-01,exclusive\n")
     payload = {"upload_id": u["id"], "sheet": "CSV", "kind": "rates", "project_id": project["id"]}
     assert client.post("/api/import/commit", json=payload).status_code == 409
     assert client.get("/api/records/rates").json() == []
     assert client.get("/api/import/batches").json() == []
+
+
+def test_rate_import_requires_tax_basis():
+    missing = prepare("rates", "P", [["role", "amount"], ["Engineer", "3200"]], {"role": "0", "amount": "1"})
+    assert missing["row_count"] == 1 and missing["errors"][0]["row"] == 2
+    mapped = prepare(
+        "rates", "P", [["role", "amount", "稅別"], ["Engineer", "3200", "含稅"]],
+        {"role": "0", "amount": "1", "tax_basis": "2"},
+    )
+    assert mapped["records"][0]["data"]["tax_basis"] == "inclusive"
 
 
 def test_incorrect_xlsx_dimensions_and_formula_cache():

@@ -58,6 +58,7 @@ def test_validation_and_rate_overlap(client, project):
         "project_id": project["id"],
         "role": "Engineer",
         "amount": "3200",
+        "tax_basis": "exclusive",
         "start": "2024-01-01",
         "end": "2024-12-31",
     }
@@ -68,6 +69,8 @@ def test_validation_and_rate_overlap(client, project):
         == 200
     )
     assert client.post("/api/records/rates", json={**rate, "amount": "-1"}).status_code == 422
+    assert client.post("/api/records/rates", json={k: v for k, v in rate.items() if k != "tax_basis"}).status_code == 422
+    assert client.post("/api/records/rates", json={**rate, "tax_basis": "unknown"}).status_code == 422
     assert (
         client.post(
             "/api/records/projects", json={"name": "X", "start": "2025-02-01", "end": "2025-01-01"}

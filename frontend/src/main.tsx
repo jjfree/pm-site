@@ -175,7 +175,8 @@ const schemas: Record<string, Field[]> = {
     {
       key: "tax_basis",
       label: "稅別",
-      options: ["unknown", "inclusive", "exclusive"],
+      options: ["", "inclusive", "exclusive"],
+      required: true,
     },
   ],
   issues: [
@@ -279,7 +280,7 @@ const defaults: Row = {
     purpose: "cost",
     unit: "day",
     start: "2000-01-01",
-    tax_basis: "unknown",
+    tax_basis: "",
   },
   issues: { kind: "issue", priority: "medium", status: "open" },
   works: { kind: "task", status: "todo" },
@@ -532,6 +533,7 @@ function RecordModal({
   const [form, setForm] = useState<Row>({
     ...defaults[kind],
     ...row,
+    ...(kind === "rates" && row?.tax_basis === "unknown" ? { tax_basis: "" } : {}),
     ...(kind !== "projects" ? { project_id: pid } : {}),
   });
   const [costItems, setCostItems] = useState<Row[]>(() => {
@@ -690,6 +692,7 @@ function RecordModal({
                   </select>
                 ) : f.options ? (
                   <select
+                    required={f.required}
                     value={String(
                       form[f.key] ??
                         (f.key === "applicable" ? "unset" : f.options[0]),
@@ -700,7 +703,9 @@ function RecordModal({
                   >
                     {f.options.map((v) => (
                       <option key={v} value={v}>
-                        {v === "unset"
+                        {v === ""
+                          ? "請選擇稅別"
+                          : v === "unset"
                           ? "未確認"
                           : v === "true"
                             ? "是"
@@ -1228,6 +1233,9 @@ function SettingsModal({
   }, []);
   async function save() {
     try {
+      if (rates.some((rate) => rate.tax_basis === "unknown" || !rate.tax_basis)) {
+        throw new Error("請為每筆預設售價選擇含稅或未稅");
+      }
       await api("/settings", "PUT", { sale_rates: rates });
       notify("預設售價已儲存於本機");
       close();
@@ -1284,7 +1292,7 @@ function SettingsModal({
               />
             </label>
             <label>
-              稅別
+              稅別 <b className="required">*</b>
               <select
                 value={r.tax_basis}
                 onChange={(e) =>
@@ -1297,7 +1305,7 @@ function SettingsModal({
               >
                 {["unknown", "exclusive", "inclusive"].map((v) => (
                   <option value={v} key={v}>
-                    {name(v)}
+                    {v === "unknown" ? "請選擇稅別" : name(v)}
                   </option>
                 ))}
               </select>
@@ -2202,6 +2210,7 @@ function App() {
                                 ["purpose", "用途"],
                                 ["amount", "單價"],
                                 ["unit", "單位"],
+                                ["tax_basis", "稅別"],
                                 ["start", "有效起日"],
                                 ["end", "迄日"],
                               ]

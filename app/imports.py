@@ -33,6 +33,7 @@ ALIASES = {
     "owner": ["負責人", "owner"],
     "amount": ["單價", "金額", "amount"],
     "purpose": ["用途", "purpose"],
+    "tax_basis": ["稅別", "金額口徑", "tax_basis"],
     "unit": ["單位", "unit"],
     "start": ["有效起日", "start"],
     "end": ["有效迄日", "end"],
@@ -154,6 +155,10 @@ def prepare(kind, project_id, rows, mapping, marker_map=None):
             for f in ["hours", "amount", "invoiced", "received"]:
                 if f in payload:
                     payload[f] = payload[f].replace(",", "")
+            if kind == "rates" and "tax_basis" in payload:
+                payload["tax_basis"] = {"含稅": "inclusive", "未稅": "exclusive"}.get(
+                    payload["tax_basis"].strip(), payload["tax_basis"].strip().lower()
+                )
             if kind == "deliverables":
                 if not payload.get("title"):
                     payload["title"] = payload.get("code", "")

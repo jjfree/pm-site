@@ -56,7 +56,7 @@ class Rate(Record):
     unit: Literal["hour", "day"] = "day"
     start: date = date(2000, 1, 1)
     end: date | None = None
-    tax_basis: Literal["unknown", "inclusive", "exclusive"] = "unknown"
+    tax_basis: Literal["inclusive", "exclusive"]
 
     @model_validator(mode="after")
     def periods(self):
