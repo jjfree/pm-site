@@ -11,7 +11,7 @@ from conftest import body
 def test_entered_eac_is_shared_and_balance_is_automatic(client, project):
     updated = client.put(
         f"/api/records/projects/{project['id']}",
-        json={**body(project), "eac": "123456.78", "tax_basis": "unknown"},
+        json={**body(project), "eac": "123456.78"},
     ).json()
     assert updated["eac"] == "123456.78" and "etc" not in updated
     client.post(
@@ -56,11 +56,11 @@ def legacy_store(path, rate=True):
         ).model_dump(mode="json"),
     )
     if rate:
+        legacy_rate = Rate(project_id=project["id"], role="Engineer", amount=3200).model_dump(mode="json")
+        legacy_rate["tax_basis"] = "exclusive"
         store.write(
             "rates",
-            Rate(project_id=project["id"], role="Engineer", amount=3200, tax_basis="exclusive").model_dump(
-                mode="json"
-            ),
+            legacy_rate,
         )
     with store.connect() as db:
         db.execute("PRAGMA user_version=1")
@@ -132,7 +132,7 @@ def test_migration_rolls_back_all_projects_on_failure(tmp_path, monkeypatch):
 
 
 def test_manual_eac_is_independent_of_actual_cost():
-    project = Project(name="Synthetic", revenue="1234.56", eac="789.10").model_dump(mode="json")
+    project = Project(name="Synthetic", revenue="1234.56", eac="789.10", tax_basis="exclusive").model_dump(mode="json")
     result = summarize(project, [], [])
     assert result["profit"] == "445.46"
 

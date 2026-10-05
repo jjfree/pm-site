@@ -34,7 +34,10 @@ def create_app(directory=None):
     def read_settings():
         with store.connect() as db:
             row = db.execute("SELECT payload FROM profiles WHERE id='local-settings'").fetchone()
-        return (Settings.model_validate_json(row["payload"]) if row else Settings()).model_dump(mode="json")
+        data = json.loads(row["payload"]) if row else {}
+        for rate in data.get("sale_rates", []):
+            rate.pop("tax_basis", None)
+        return Settings.model_validate(data).model_dump(mode="json")
 
     @app.middleware("http")
     async def local_security(request: Request, call_next):
@@ -73,6 +76,8 @@ def create_app(directory=None):
 
     def validate(kind, payload, ident=None, db=None):
         check_kind(kind)
+        if kind == "rates":
+            payload = {key: value for key, value in payload.items() if key != "tax_basis"}
         try:
             data = MODELS[kind].model_validate(payload).model_dump(mode="json")
         except ValidationError as exc:
@@ -159,14 +164,13 @@ def create_app(directory=None):
     @app.get("/api/records/{kind}")
     def records(kind: str, project_id: str | None = None):
         check_kind(kind)
-        return store.list(kind, project_id)
+        rows = store.list(kind, project_id)
+        return [{key: value for key, value in row.items() if key != "tax_basis"} for row in rows] if kind == "rates" else rows
 
     @app.post("/api/records/{kind}")
     def create_record(kind: str, payload: dict):
         with store.connect() as db:
             defaults = read_settings()["sale_rates"] if kind == "projects" else []
-            if any(rate["tax_basis"] == "unknown" for rate in defaults):
-                raise HTTPException(422, "預設人天售價有未設定稅別；請先在本機設定選擇含稅或未稅")
             saved = store.write(kind, validate(kind, payload, db=db), db=db)
             if kind == "projects":
                 for default in defaults:
@@ -181,11 +185,18 @@ def create_app(directory=None):
     @app.put("/api/settings")
     def update_settings(payload: dict):
         try:
+            if isinstance(payload.get("sale_rates"), list):
+                payload = {
+                    **payload,
+                    "sale_rates": [
+                        {key: value for key, value in rate.items() if key != "tax_basis"}
+                        if isinstance(rate, dict) else rate
+                        for rate in payload["sale_rates"]
+                    ],
+                }
             settings = Settings.model_validate(payload).model_dump(mode="json")
         except ValidationError as exc:
-            raise HTTPException(422, "請檢查角色、金額、稅別或重複角色") from exc
-        if any(rate["tax_basis"] == "unknown" for rate in settings["sale_rates"]):
-            raise HTTPException(422, "預設人天售價稅別必填；請選擇含稅或未稅")
+            raise HTTPException(422, "請檢查角色、金額或重複角色") from exc
         with store.connect() as db:
             db.execute(
                 "INSERT OR REPLACE INTO profiles VALUES('local-settings',?)",
@@ -398,7 +409,7 @@ def create_app(directory=None):
         check_kind(kind)
         if fmt not in {"csv", "xlsx"}:
             raise HTTPException(422, "匯出格式錯誤")
-        content = export_table(store.list(kind, project_id), fmt)
+        content = export_table(records(kind, project_id), fmt)
         media = (
             "text/csv"
             if fmt == "csv"

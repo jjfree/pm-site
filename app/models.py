@@ -35,7 +35,7 @@ class Project(Record):
     eac: Decimal | None = Field(default=None, ge=0, max_digits=16, decimal_places=2)
     other_cost: Decimal = Field(default=Decimal("0"), ge=0, max_digits=16, decimal_places=2)
     other_cost_items: list[OtherCostItem] = Field(default_factory=list, max_length=2000)
-    tax_basis: Literal["unknown", "inclusive", "exclusive"] = "unknown"
+    tax_basis: Literal["inclusive", "exclusive"]
     budget_start: date | None = None
     budget_end: date | None = None
 
@@ -56,7 +56,6 @@ class Rate(Record):
     unit: Literal["hour", "day"] = "day"
     start: date = date(2000, 1, 1)
     end: date | None = None
-    tax_basis: Literal["inclusive", "exclusive"]
 
     @model_validator(mode="after")
     def periods(self):
@@ -156,7 +155,6 @@ MODELS = {
 class SaleDefault(Record):
     role: str = Field(min_length=1, max_length=100)
     amount: Decimal = Field(ge=0, max_digits=16, decimal_places=2)
-    tax_basis: Literal["unknown", "inclusive", "exclusive"] = "unknown"
 
 
 class Settings(Record):

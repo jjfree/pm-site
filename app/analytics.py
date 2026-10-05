@@ -44,8 +44,8 @@ def summarize(project, times, rates, start=None, end=None):
             if (
                 r is None
                 or (r["unit"] == "day" and hpd is None)
-                or r["tax_basis"] != project["tax_basis"]
-                or r["tax_basis"] == "unknown"
+                or project["tax_basis"] == "unknown"
+                or r.get("tax_basis") not in (None, "", "unknown", project["tax_basis"])
             ):
                 missing += 1
                 continue
@@ -60,6 +60,10 @@ def summarize(project, times, rates, start=None, end=None):
     full_cost, _, full_missing = (known_cost, mapped_hours, missing) if scope_matches else labor_cost(times)
     other_cost = amount(project.get("other_cost", 0)) + sum(
         (amount(item["amount"]) for item in project.get("other_cost_items", [])), Decimal("0")
+    )
+    legacy_basis_conflicts = sum(
+        r.get("tax_basis") in {"inclusive", "exclusive"} and r["tax_basis"] != project["tax_basis"]
+        for r in rates
     )
     total = full_cost + other_cost if full_missing == 0 else None
     budget_scope = not project.get("budget_start") and not project.get("budget_end")
@@ -78,6 +82,7 @@ def summarize(project, times, rates, start=None, end=None):
         "actual_cost": money(total),
         "missing_rate_rows": missing,
         "full_missing_rate_rows": full_missing,
+        "legacy_basis_conflicts": legacy_basis_conflicts,
         "mapped_hours": str(mapped_hours),
         "rows": len(selected),
         "eac": money(eac),
@@ -101,8 +106,8 @@ def evaluate_scenario(project, scenario, rates, summary):
         if (
             r
             and r["unit"] == "day"
-            and r["tax_basis"] == project["tax_basis"]
-            and r["tax_basis"] != "unknown"
+            and project["tax_basis"] != "unknown"
+            and r.get("tax_basis") in (None, "", "unknown", project["tax_basis"])
         ):
             extra = amount(r["amount"]) * amount(scenario["billable_md"])
     removed, revenue = amount(scenario["removed_value"]), amount(project.get("revenue"))

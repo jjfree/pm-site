@@ -86,14 +86,14 @@ def test_batch_rolls_back_on_validation_conflict(client, project):
     assert client.get("/api/import/batches").json() == []
 
 
-def test_rate_import_requires_tax_basis():
-    missing = prepare("rates", "P", [["role", "amount"], ["Engineer", "3200"]], {"role": "0", "amount": "1"})
-    assert missing["row_count"] == 1 and missing["errors"][0]["row"] == 2
-    mapped = prepare(
+def test_rate_import_uses_project_basis_and_ignores_legacy_tax_column():
+    plain = prepare("rates", "P", [["role", "amount"], ["Engineer", "3200"]], {"role": "0", "amount": "1"})
+    assert plain["row_count"] == 1 and "tax_basis" not in plain["records"][0]["data"]
+    legacy = prepare(
         "rates", "P", [["role", "amount", "稅別"], ["Engineer", "3200", "含稅"]],
         {"role": "0", "amount": "1", "tax_basis": "2"},
     )
-    assert mapped["records"][0]["data"]["tax_basis"] == "inclusive"
+    assert "tax_basis" not in legacy["records"][0]["data"]
 
 
 def test_incorrect_xlsx_dimensions_and_formula_cache():

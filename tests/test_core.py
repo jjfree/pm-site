@@ -62,18 +62,19 @@ def test_validation_and_rate_overlap(client, project):
         "start": "2024-01-01",
         "end": "2024-12-31",
     }
-    assert client.post("/api/records/rates", json=rate).status_code == 200
+    saved = client.post("/api/records/rates", json=rate)
+    assert saved.status_code == 200 and "tax_basis" not in saved.json()
     assert client.post("/api/records/rates", json={**rate, "start": "2024-12-31"}).status_code == 409
     assert (
         client.post("/api/records/rates", json={**rate, "start": "2025-01-01", "end": None}).status_code
         == 200
     )
     assert client.post("/api/records/rates", json={**rate, "amount": "-1"}).status_code == 422
-    assert client.post("/api/records/rates", json={k: v for k, v in rate.items() if k != "tax_basis"}).status_code == 422
-    assert client.post("/api/records/rates", json={**rate, "tax_basis": "unknown"}).status_code == 422
+    assert client.post("/api/records/projects", json={"name": "Missing basis"}).status_code == 422
+    assert client.post("/api/records/projects", json={"name": "Unknown basis", "tax_basis": "unknown"}).status_code == 422
     assert (
         client.post(
-            "/api/records/projects", json={"name": "X", "start": "2025-02-01", "end": "2025-01-01"}
+            "/api/records/projects", json={"name": "X", "tax_basis": "exclusive", "start": "2025-02-01", "end": "2025-01-01"}
         ).status_code
         == 422
     )
@@ -84,6 +85,19 @@ def test_validation_and_rate_overlap(client, project):
         ).status_code
         == 422
     )
+
+
+def test_legacy_rate_tax_is_hidden_from_records_and_exports(client, project):
+    store = client.app.state.store
+    rate = store.write("rates", {
+        "project_id": project["id"], "role": "Engineer", "amount": "3200",
+        "purpose": "cost", "person": "", "unit": "day", "start": "2000-01-01",
+        "end": None, "tax_basis": "exclusive",
+    })
+    visible = client.get(f"/api/records/rates?project_id={project['id']}").json()[0]
+    assert visible["id"] == rate["id"] and "tax_basis" not in visible
+    exported = client.get(f"/api/exports/rates?project_id={project['id']}").text
+    assert "tax_basis" not in exported.splitlines()[0]
 
 
 def test_assigning_time_role_updates_same_person_and_cost(client, project):
@@ -99,7 +113,7 @@ def test_assigning_time_role_updates_same_person_and_cost(client, project):
         ).json()
         for person, role in [("Member-A", ""), ("Member-A", "Old"), ("Member-B", "")]
     ]
-    other_project = client.post("/api/records/projects", json={"name": "Other project"}).json()
+    other_project = client.post("/api/records/projects", json={"name": "Other project", "tax_basis": "exclusive"}).json()
     outside = client.post(
         "/api/records/times",
         json={"project_id": other_project["id"], "person": "Member-A", "date": "2025-01-01", "hours": 8},
@@ -136,8 +150,8 @@ def fixtures():
         tax_basis="exclusive",
     )
     rates = [
-        model(Rate, project_id="P", role="Engineer", amount=3200, end="2024-12-31", tax_basis="exclusive"),
-        model(Rate, project_id="P", role="Engineer", amount=4000, start="2025-01-01", tax_basis="exclusive"),
+        model(Rate, project_id="P", role="Engineer", amount=3200, end="2024-12-31"),
+        model(Rate, project_id="P", role="Engineer", amount=4000, start="2025-01-01"),
     ]
     times = [
         model(TimeEntry, project_id="P", person="Member-A", role="Engineer", date=d, hours=8)
@@ -157,16 +171,21 @@ def test_cross_year_cost_and_filtered_scope():
     assert filtered["eac"] == "27200.00" and filtered["profit"] == "172800.00"
     assert filtered["actual_cost"] == "7200.00" and filtered["budget"] == "90000"
     assert filtered["etc"] == "20000.00"
+    p["tax_basis"] = "inclusive"
+    assert summarize(p, times, rates)["actual_cost"] == "7200.00"
 
 
-def test_missing_is_not_zero_and_tax_basis():
+def test_missing_is_not_zero_and_legacy_rate_basis():
     p, times, rates = fixtures()
     s = summarize(p, times, rates[:1])
     assert s["known_labor_cost"] == "3200.00" and s["missing_rate_rows"] == 1
     assert s["actual_cost"] is None
     assert s["eac"] == "27200.00" and s["profit"] == "172800.00"
     rates[1]["tax_basis"] = "inclusive"
-    assert summarize(p, times, rates)["actual_cost"] is None
+    mismatched = summarize(p, times, rates)
+    assert mismatched["actual_cost"] is None and mismatched["legacy_basis_conflicts"] == 1
+    rates[1]["tax_basis"] = "unknown"
+    assert summarize(p, times, rates)["actual_cost"] == "7200.00"
     p["hours_per_day"] = None
     assert summarize(p, times, rates)["md"] is None
     rates[0]["unit"] = "hour"
@@ -180,9 +199,7 @@ def test_person_rate_and_scenario_unknown():
     assert s["known_labor_cost"] == "7700.00"
     scenario = model(Scenario, project_id="P", name="Option", removed_value=30000)
     assert evaluate_scenario(p, scenario, rates, s)["net_revenue_decrease"] is None
-    rates.append(
-        model(Rate, project_id="P", role="Engineer", purpose="sale", amount=8000, tax_basis="exclusive")
-    )
+    rates.append(model(Rate, project_id="P", role="Engineer", purpose="sale", amount=8000))
     scenario.update(billable_md="2", sale_role="Engineer", rate_date="2025-01-01", cost_change="1000")
     result = evaluate_scenario(p, scenario, rates, s)
     assert result["replacement_revenue"] == "16000.00" and result["net_revenue_decrease"] == "14000.00"

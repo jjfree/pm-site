@@ -37,8 +37,8 @@ def seed(store):
             )
             pid = project["id"]
             for role, value in [("PM", "5600"), ("Engineer", "4800")]:
-                save("rates", project_id=pid, role=role, amount=value, purpose="cost", tax_basis="exclusive")
-                save("rates", project_id=pid, role=role, amount="9200", purpose="sale", tax_basis="exclusive")
+                save("rates", project_id=pid, role=role, amount=value, purpose="cost")
+                save("rates", project_id=pid, role=role, amount="9200", purpose="sale")
             for offset in range(1, 13):
                 day = today - timedelta(days=offset * 9)
                 save(

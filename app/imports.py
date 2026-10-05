@@ -33,7 +33,6 @@ ALIASES = {
     "owner": ["負責人", "owner"],
     "amount": ["單價", "金額", "amount"],
     "purpose": ["用途", "purpose"],
-    "tax_basis": ["稅別", "金額口徑", "tax_basis"],
     "unit": ["單位", "unit"],
     "start": ["有效起日", "start"],
     "end": ["有效迄日", "end"],
@@ -130,6 +129,8 @@ def sanitize_headers(headers):
 def prepare(kind, project_id, rows, mapping, marker_map=None):
     if kind not in {"times", "rates", "deliverables", "issues", "works", "payments"}:
         raise ValueError("此資料類型不支援匯入")
+    if kind == "rates":
+        mapping = {field: column for field, column in mapping.items() if field != "tax_basis"}
     headers, records, errors = rows[0] if rows else [], [], []
     fields = MODELS[kind].model_fields
     allowed = {str(h["index"]) for h in sanitize_headers(headers) if not h["excluded"]}
@@ -155,10 +156,6 @@ def prepare(kind, project_id, rows, mapping, marker_map=None):
             for f in ["hours", "amount", "invoiced", "received"]:
                 if f in payload:
                     payload[f] = payload[f].replace(",", "")
-            if kind == "rates" and "tax_basis" in payload:
-                payload["tax_basis"] = {"含稅": "inclusive", "未稅": "exclusive"}.get(
-                    payload["tax_basis"].strip(), payload["tax_basis"].strip().lower()
-                )
             if kind == "deliverables":
                 if not payload.get("title"):
                     payload["title"] = payload.get("code", "")

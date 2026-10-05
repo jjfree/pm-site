@@ -147,7 +147,8 @@ const schemas: Record<string, Field[]> = {
     {
       key: "tax_basis",
       label: "金額口徑",
-      options: ["unknown", "inclusive", "exclusive"],
+      options: ["", "inclusive", "exclusive"],
+      required: true,
     },
     { key: "budget", label: "成本預算", type: "number" },
     { key: "revenue", label: "核定收入", type: "number" },
@@ -172,12 +173,6 @@ const schemas: Record<string, Field[]> = {
     { key: "unit", label: "單位", options: ["hour", "day"] },
     { key: "start", label: "有效起日", type: "date", required: true },
     { key: "end", label: "有效迄日", type: "date" },
-    {
-      key: "tax_basis",
-      label: "稅別",
-      options: ["", "inclusive", "exclusive"],
-      required: true,
-    },
   ],
   issues: [
     { key: "title", label: "標題", required: true },
@@ -273,14 +268,13 @@ const defaults: Row = {
   projects: {
     status: "active",
     currency: "TWD",
-    tax_basis: "unknown",
+    tax_basis: "",
     other_cost: "0",
   },
   rates: {
     purpose: "cost",
     unit: "day",
     start: "2000-01-01",
-    tax_basis: "",
   },
   issues: { kind: "issue", priority: "medium", status: "open" },
   works: { kind: "task", status: "todo" },
@@ -533,7 +527,7 @@ function RecordModal({
   const [form, setForm] = useState<Row>({
     ...defaults[kind],
     ...row,
-    ...(kind === "rates" && row?.tax_basis === "unknown" ? { tax_basis: "" } : {}),
+    ...(kind === "projects" && row?.tax_basis === "unknown" ? { tax_basis: "" } : {}),
     ...(kind !== "projects" ? { project_id: pid } : {}),
   });
   const [costItems, setCostItems] = useState<Row[]>(() => {
@@ -704,7 +698,7 @@ function RecordModal({
                     {f.options.map((v) => (
                       <option key={v} value={v}>
                         {v === ""
-                          ? "請選擇稅別"
+                          ? "請選擇含稅／未稅"
                           : v === "unset"
                           ? "未確認"
                           : v === "true"
@@ -1233,9 +1227,6 @@ function SettingsModal({
   }, []);
   async function save() {
     try {
-      if (rates.some((rate) => rate.tax_basis === "unknown" || !rate.tax_basis)) {
-        throw new Error("請為每筆預設售價選擇含稅或未稅");
-      }
       await api("/settings", "PUT", { sale_rates: rates });
       notify("預設售價已儲存於本機");
       close();
@@ -1291,25 +1282,6 @@ function SettingsModal({
                 }
               />
             </label>
-            <label>
-              稅別 <b className="required">*</b>
-              <select
-                value={r.tax_basis}
-                onChange={(e) =>
-                  setRates(
-                    rates.map((v, j) =>
-                      i === j ? { ...v, tax_basis: e.target.value } : v,
-                    ),
-                  )
-                }
-              >
-                {["unknown", "exclusive", "inclusive"].map((v) => (
-                  <option value={v} key={v}>
-                    {v === "unknown" ? "請選擇稅別" : name(v)}
-                  </option>
-                ))}
-              </select>
-            </label>
             <button
               className="ghost danger"
               onClick={() => setRates(rates.filter((_, j) => j !== i))}
@@ -1321,7 +1293,7 @@ function SettingsModal({
         <button
           className="secondary"
           onClick={() =>
-            setRates([...rates, { role: "", amount: "", tax_basis: "unknown" }])
+            setRates([...rates, { role: "", amount: "" }])
           }
         >
           <Plus size={16} />
@@ -2045,7 +2017,7 @@ function App() {
                   {summary.missing_rate_rows > 0 && (
                     <div className="notice">
                       {summary.missing_rate_rows}{" "}
-                      筆缺少角色、有效單價、人天換算或一致稅別；目前已映射{" "}
+                      筆缺少角色、有效單價、人天換算或專案金額口徑；目前已映射{" "}
                       {num(summary.mapped_hours)} 小時。
                     </div>
                   )}
@@ -2053,6 +2025,12 @@ function App() {
                     <div className="notice">
                       全期有 {summary.full_missing_rate_rows}{" "}
                       筆工時尚無完整成本映射，AC 與 ETC 保留待估。
+                    </div>
+                  )}
+                  {summary.legacy_basis_conflicts > 0 && (
+                    <div className="notice">
+                      {summary.legacy_basis_conflicts} 筆歷史單價的舊稅別與專案不同。
+                      請確認單價金額已符合專案口徑，再編輯並儲存該單價。
                     </div>
                   )}
                   {(start || end) && (
@@ -2210,7 +2188,6 @@ function App() {
                                 ["purpose", "用途"],
                                 ["amount", "單價"],
                                 ["unit", "單位"],
-                                ["tax_basis", "稅別"],
                                 ["start", "有效起日"],
                                 ["end", "迄日"],
                               ]
