@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+Date = date
+
 
 class Record(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -11,7 +13,7 @@ class Record(BaseModel):
 
 class OtherCostItem(Record):
     title: str = Field(min_length=1, max_length=160)
-    date: date | None = None
+    date: Date | None = None
     amount: Decimal = Field(ge=0, max_digits=16, decimal_places=2)
     note: str = Field(default="", max_length=2000)
 
