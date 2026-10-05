@@ -9,6 +9,13 @@ class Record(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
+class OtherCostItem(Record):
+    title: str = Field(min_length=1, max_length=160)
+    date: date | None = None
+    amount: Decimal = Field(ge=0, max_digits=16, decimal_places=2)
+    note: str = Field(default="", max_length=2000)
+
+
 class Project(Record):
     name: str = Field(min_length=1, max_length=160)
     code: str = Field(default="", max_length=60)
@@ -25,6 +32,7 @@ class Project(Record):
     revenue: Decimal | None = Field(default=None, ge=0, max_digits=16, decimal_places=2)
     eac: Decimal | None = Field(default=None, ge=0, max_digits=16, decimal_places=2)
     other_cost: Decimal = Field(default=Decimal("0"), ge=0, max_digits=16, decimal_places=2)
+    other_cost_items: list[OtherCostItem] = Field(default_factory=list, max_length=2000)
     tax_basis: Literal["unknown", "inclusive", "exclusive"] = "unknown"
     budget_start: date | None = None
     budget_end: date | None = None

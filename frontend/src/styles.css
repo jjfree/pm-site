@@ -684,11 +684,69 @@ td small {
   font-weight: 600;
 }
 .tabs .tab-action {
-  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 5px;
   color: #718994;
+}
+.tabs button.tab-action {
+  margin-left: auto;
+}
+.tabs a.tab-action {
+  margin-left: 0;
+}
+.other-cost-editor {
+  margin-top: 22px;
+  padding-top: 20px;
+  border-top: 1px solid #e8edf0;
+}
+.other-cost-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.other-cost-heading strong {
+  color: #35505f;
+  font-size: 12px;
+}
+.other-cost-heading p {
+  margin-top: 5px;
+  color: #91a1aa;
+  font-size: 10px;
+}
+.other-cost-heading button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.other-cost-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr 0.9fr 1.4fr auto;
+  align-items: end;
+  gap: 12px;
+  padding: 13px 0;
+  border-top: 1px solid #eef2f4;
+}
+.other-cost-row label {
+  color: #768e9a;
+  font-size: 10px;
+}
+.other-cost-row input {
+  margin-top: 5px;
+}
+.other-cost-row .danger {
+  margin: 0 0 4px;
+  padding: 8px;
+}
+.other-cost-total {
+  padding-top: 12px;
+  color: #35505f;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: right;
 }
 .link {
   border: 0;
@@ -1126,6 +1184,9 @@ footer span {
   }
   .form-grid {
     grid-template-columns: 1fr;
+  }
+  .other-cost-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .date-filter {
     flex-wrap: wrap;

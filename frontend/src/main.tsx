@@ -152,7 +152,6 @@ const schemas: Record<string, Field[]> = {
     { key: "budget", label: "成本預算", type: "number" },
     { key: "revenue", label: "核定收入", type: "number" },
     { key: "eac", label: "預計完成成本 EAC", type: "number" },
-    { key: "other_cost", label: "已投入其他成本", type: "number" },
     { key: "budget_start", label: "預算範圍起日（空白＝全期）", type: "date" },
     { key: "budget_end", label: "預算範圍迄日", type: "date" },
   ],
@@ -535,11 +534,30 @@ function RecordModal({
     ...row,
     ...(kind !== "projects" ? { project_id: pid } : {}),
   });
+  const [costItems, setCostItems] = useState<Row[]>(() => {
+    const items = Array.isArray(row?.other_cost_items)
+      ? row.other_cost_items.map((item: Row) => ({ ...item }))
+      : [];
+    const legacyAmount = Number(row?.other_cost || 0);
+    if (legacyAmount > 0) {
+      items.push({
+        title: "既有其他成本（舊版合計）",
+        date: "",
+        amount: String(legacyAmount),
+        note: "原本以單筆合計記錄",
+      });
+    }
+    return items;
+  });
   const [err, setErr] = useState(""),
     [busy, setBusy] = useState(false);
   const roleOptions = [...new Set(rates.map((rate) => String(rate.role)))].sort();
   const currentRole = String(form.role || "");
   const roleChanged = kind === "times" && !!row && !!currentRole && currentRole !== row.role;
+  const otherCostTotal = costItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  function updateCostItem(index: number, key: string, value: string) {
+    setCostItems((items) => items.map((item, i) => i === index ? { ...item, [key]: value } : item));
+  }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -561,6 +579,15 @@ function RecordModal({
                   : v;
         body[f.key] = v;
       });
+      if (kind === "projects") {
+        body.other_cost = "0";
+        body.other_cost_items = costItems.map((item) => ({
+          title: item.title,
+          date: item.date || null,
+          amount: item.amount,
+          note: item.note || "",
+        }));
+      }
       if (kind !== "projects") body.project_id = pid;
       if (row) {
         body.version = row.version;
@@ -692,6 +719,52 @@ function RecordModal({
               </label>
             ))}
           </div>
+          {kind === "projects" && (
+            <section className="other-cost-editor">
+              <div className="other-cost-heading">
+                <div>
+                  <strong>已投入其他成本</strong>
+                  <p>逐筆記錄項目與金額，合計會計入全期已投入成本。</p>
+                </div>
+                <button
+                  type="button"
+                  className="secondary"
+                  onClick={() => setCostItems((items) => [...items, { title: "", date: "", amount: "", note: "" }])}
+                >
+                  <Plus size={15} />新增項目
+                </button>
+              </div>
+              {costItems.map((item, index) => (
+                <div className="other-cost-row" key={index}>
+                  <label>
+                    項目
+                    <input required value={item.title || ""} onChange={(e) => updateCostItem(index, "title", e.target.value)} />
+                  </label>
+                  <label>
+                    日期
+                    <input type="date" value={item.date || ""} onChange={(e) => updateCostItem(index, "date", e.target.value)} />
+                  </label>
+                  <label>
+                    金額
+                    <input required type="number" min="0" step="0.01" value={item.amount ?? ""} onChange={(e) => updateCostItem(index, "amount", e.target.value)} />
+                  </label>
+                  <label>
+                    說明
+                    <input value={item.note || ""} onChange={(e) => updateCostItem(index, "note", e.target.value)} />
+                  </label>
+                  <button
+                    type="button"
+                    className="ghost danger"
+                    aria-label={`刪除其他成本項目 ${index + 1}`}
+                    onClick={() => setCostItems((items) => items.filter((_, i) => i !== index))}
+                  >
+                    刪除
+                  </button>
+                </div>
+              ))}
+              <div className="other-cost-total">明細合計：{num(otherCostTotal)} {form.currency || "TWD"}</div>
+            </section>
+          )}
           {kind === "times" && roleChanged && (
             <div className="notice">
               儲存後，會將此角色套用至本專案同姓名的所有工時紀錄。
@@ -1545,7 +1618,7 @@ function App() {
                   ))}
                 </select>
               )}
-              {page < 4 && (
+              {page < 4 && page !== 2 && (
                 <button
                   className="primary"
                   onClick={() =>
@@ -2075,6 +2148,18 @@ function App() {
                         }
                       </button>
                     ))}
+                    <button
+                      className="tab-action"
+                      onClick={() => openModal(tab)}
+                    >
+                      <Plus size={15} />
+                      {({
+                        times: "新增工時",
+                        rates: "新增單價",
+                        scenarios: "新增情境",
+                        payments: "新增款項",
+                      } as Row)[tab]}
+                    </button>
                     <a
                       className="tab-action"
                       href={`/api/exports/${tab}?project_id=${pid}&fmt=xlsx`}

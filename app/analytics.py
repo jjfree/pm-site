@@ -58,7 +58,10 @@ def summarize(project, times, rates, start=None, end=None):
     # Date filters affect actual effort; the entered forecast always covers the whole project.
     scope_matches = not start and not end
     full_cost, _, full_missing = (known_cost, mapped_hours, missing) if scope_matches else labor_cost(times)
-    total = full_cost + amount(project["other_cost"]) if full_missing == 0 else None
+    other_cost = amount(project.get("other_cost", 0)) + sum(
+        (amount(item["amount"]) for item in project.get("other_cost_items", [])), Decimal("0")
+    )
+    total = full_cost + other_cost if full_missing == 0 else None
     budget_scope = not project.get("budget_start") and not project.get("budget_end")
     eac = amount(project.get("eac"))
     etc = eac - total if eac is not None and total is not None else None
