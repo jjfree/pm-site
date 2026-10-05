@@ -1817,7 +1817,9 @@ function App() {
                             key={p.id}
                             onClick={() => {
                               setPid(p.id);
-                              setPage(1);
+                              setSearch("");
+                              setFilter("all");
+                              setPage(3);
                             }}
                           >
                             <span className={"mini-dot " + p.status} />
