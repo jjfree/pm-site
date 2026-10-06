@@ -162,6 +162,7 @@ const schemas: Record<string, Field[]> = {
   ],
   members: [
     { key: "person", label: "成員姓名", required: true },
+    { key: "alias", label: "英文名／別名" },
     { key: "role", label: "預設工時角色" },
     { key: "active", label: "狀態", options: ["true", "false"] },
   ],
@@ -372,6 +373,8 @@ function DataTable({
                     "result",
                   ].includes(k) ? (
                     <Badge value={r[k]} />
+                  ) : k === "owner" && r[k] && !r.owner_member_id ? (
+                    <>{r[k]} <small className="legacy-owner">待重新指派</small></>
                   ) : r[k] === true ? (
                     "是"
                   ) : r[k] === false ? (
@@ -647,7 +650,7 @@ function ProjectPeoplePanel({
           <button className="secondary" onClick={() => onOpen("members")}><Plus size={15} />新增成員</button></div>
         {[...members].sort((a, b) => String(a.person).localeCompare(String(b.person), "zh-TW")).map((member) => (
           <div className="people-row" key={member.id}>
-            <div><strong>{member.person}</strong><span>{member.role || "未指定角色"} · {member.active ? "啟用" : "停用"}</span></div>
+            <div><strong>{member.person}{member.alias && <span className="member-alias">（{member.alias}）</span>}</strong><span>{member.role || "未指定角色"} · {member.active ? "啟用" : "停用"}</span></div>
             <div className="people-meta"><span>{num(hoursFor(member.person))} hr</span>
               <span>{member.role && rates.some((rate) => rate.purpose === "cost" && rate.role === member.role && (!rate.person || rate.person === member.person)) ? "已設定成本單價" : "缺成本單價"}</span></div>
             {member.active && member.role && times.some((entry) => entry.person === member.person && entry.role !== member.role) &&
@@ -741,6 +744,26 @@ function RecordModal({
   const roleOptions = roleNames;
   const currentRole = String(form.role || "");
   const memberNames = members.filter((member) => member.active).map((member) => String(member.person));
+  const hasOwner = ["projects", "works", "deliverables", "issues"].includes(kind);
+  const ownerMembers = kind === "projects" && !isExisting ? [] : members;
+  const linkedOwner = ownerMembers.find((member) => member.id === form.owner_member_id);
+  const [ownerRole, setOwnerRole] = useState(
+    linkedOwner ? linkedOwner.role || "__unassigned__" : "",
+  );
+  const ownerRoles = [...new Set(ownerMembers
+    .filter((member) => member.active || member.id === form.owner_member_id)
+    .map((member) => member.role || "__unassigned__"))]
+    .sort((a, b) => a.localeCompare(b, "zh-TW"));
+  const ownerChoices = ownerMembers.filter((member) =>
+    (member.active || member.id === form.owner_member_id) &&
+    (member.role || "__unassigned__") === ownerRole
+  ).sort((a, b) => String(a.person).localeCompare(String(b.person), "zh-TW"));
+  const legacyOwner = isExisting && form.owner && !form.owner_member_id ? String(form.owner) : "";
+  const suggestedOwner = legacyOwner && ownerMembers.find((member) =>
+    member.active && [member.person, member.alias].some((value) =>
+      value && String(value).toLocaleLowerCase() === legacyOwner.toLocaleLowerCase()
+    )
+  );
   const otherCostTotal = costItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   function updateCostItem(index: number, key: string, value: string) {
     setCostItems((items) => items.map((item, i) => i === index ? { ...item, [key]: value } : item));
@@ -775,6 +798,10 @@ function RecordModal({
           amount: item.amount,
           note: item.note || "",
         }));
+      }
+      if (hasOwner) {
+        body.owner = form.owner || "";
+        body.owner_member_id = form.owner_member_id || "";
       }
       if (kind !== "projects") body.project_id = pid;
       if (isExisting) {
@@ -858,7 +885,35 @@ function RecordModal({
               >
                 {f.label}
                 {f.required && <b className="required"> *</b>}
-                {(kind === "times" || kind === "members") && f.key === "role" ? (
+                {hasOwner && f.key === "owner" ? (
+                  <div className="owner-picker">
+                    <select aria-label="負責人角色" value={ownerRole} disabled={!ownerMembers.length}
+                      onChange={(e) => {
+                        setOwnerRole(e.target.value);
+                        setForm({ ...form, owner_member_id: "", owner: form.owner_member_id ? "" : form.owner });
+                      }}>
+                      <option value="">先選角色</option>
+                      {ownerRoles.map((role) => <option key={role} value={role}>
+                        {role === "__unassigned__" ? "未指定角色" : role}
+                      </option>)}
+                    </select>
+                    <select aria-label="負責人成員" value={form.owner_member_id || ""} disabled={!ownerRole}
+                      onChange={(e) => {
+                        const member = ownerMembers.find((candidate) => candidate.id === e.target.value);
+                        setForm({ ...form, owner_member_id: member?.id || "", owner: member?.person || "" });
+                      }}>
+                      <option value="">未指定負責人</option>
+                      {ownerChoices.map((member) => <option key={member.id} value={member.id}>
+                        {member.person}{member.alias ? `（${member.alias}）` : ""}{member.active ? "" : "（已停用）"}
+                      </option>)}
+                    </select>
+                    {legacyOwner && <small className="field-hint">原負責人：{legacyOwner}（待重新指派）
+                      {suggestedOwner && `；可能對應 ${suggestedOwner.person}，請自行確認`}
+                    </small>}
+                    {kind === "projects" && !isExisting && <small className="field-hint">建立專案並新增成員後，即可指定負責人。</small>}
+                    {isExisting && !ownerMembers.length && <small className="field-hint">請先在「成員、角色與單價」新增專案成員。</small>}
+                  </div>
+                ) : (kind === "times" || kind === "members") && f.key === "role" ? (
                   <select
                     value={currentRole}
                     onChange={(e) =>
@@ -1977,7 +2032,7 @@ function App() {
                               <td>
                                 <Badge value={p.status} />
                               </td>
-                              <td>{p.owner || "—"}</td>
+                              <td>{p.owner || "—"}{p.owner && !p.owner_member_id && <small className="legacy-owner">待重新指派</small>}</td>
                               <td>
                                 {p.open_issues ? `${p.open_issues} 件` : "—"}
                               </td>
@@ -2076,7 +2131,7 @@ function App() {
                       <h2>{project.name}</h2>
                       <p>{project.summary || "尚未填寫摘要"}</p>
                       <div className="detail-meta">
-                        <span>負責人：{project.owner || "未設定"}</span>
+                        <span>負責人：{project.owner || "未設定"}{project.owner && !project.owner_member_id && "（待重新指派）"}</span>
                         <span>
                           期間：{project.start || "未設定"} —{" "}
                           {project.end || "未設定"}
@@ -2131,6 +2186,7 @@ function App() {
                               ["code", "識別碼"],
                               ["title", "功能／交付"],
                               ["system", "系統／分類"],
+                              ["owner", "負責人"],
                               ["review", "初步檢視"],
                               ["applicable", "需正式查核"],
                               ["result", "正式結果"],
@@ -2568,7 +2624,7 @@ function App() {
           row={modal.row}
           pid={pid}
           rates={(all.rates || []).filter((rate) => rate.project_id === pid)}
-          members={all.members || []}
+          members={(all.members || []).filter((member) => member.project_id === (modal.kind === "projects" ? modal.row?.id : pid))}
           roleNames={roleNames}
           close={() => setModal(null)}
           saved={reload}

@@ -166,6 +166,52 @@ def test_project_members_and_roles_are_unique_and_do_not_rewrite_history(client,
     assert client.post("/api/records/members", json={"project_id": other["id"], "person": "Member-A"}).status_code == 200
 
 
+def test_owner_assignments_link_to_project_members_and_preserve_legacy_values(client, project):
+    pid = project["id"]
+    member = client.post("/api/records/members", json={
+        "project_id": pid, "person": "Lin", "alias": "Alex", "role": "PM",
+    }).json()
+    assert client.post("/api/records/members", json={
+        "project_id": pid, "person": "Other", "alias": "alex",
+    }).status_code == 409
+    assert client.post("/api/records/members", json={
+        "project_id": pid, "person": "Alex",
+    }).status_code == 409
+
+    legacy = client.post("/api/records/issues", json={
+        "project_id": pid, "title": "Legacy", "owner": "Old name",
+    }).json()
+    assert legacy["owner"] == "Old name" and legacy["owner_member_id"] == ""
+    assigned = client.put(f"/api/records/issues/{legacy['id']}", json={
+        **body(legacy), "owner_member_id": member["id"], "owner": "Spoofed",
+    }).json()
+    assert assigned["owner"] == "Lin" and assigned["owner_member_id"] == member["id"]
+    for kind, title in (("works", "Task"), ("deliverables", "Deliverable")):
+        created = client.post(f"/api/records/{kind}", json={
+            "project_id": pid, "title": title, "owner_member_id": member["id"],
+        }).json()
+        assert created["owner"] == "Lin"
+    updated_project = client.put(f"/api/records/projects/{pid}", json={
+        **body(project), "owner_member_id": member["id"],
+    }).json()
+    assert updated_project["owner"] == "Lin"
+
+    other = client.post("/api/records/projects", json={"name": "Other", "tax_basis": "exclusive"}).json()
+    assert client.post("/api/records/issues", json={
+        "project_id": other["id"], "title": "Cross project", "owner_member_id": member["id"],
+    }).status_code == 422
+    inactive = client.put(f"/api/records/members/{member['id']}", json={
+        **body(member), "active": False,
+    }).json()
+    assert client.put(f"/api/records/issues/{legacy['id']}", json={
+        **body(assigned), "action": "Still assigned",
+    }).status_code == 200
+    assert client.post("/api/records/issues", json={
+        "project_id": pid, "title": "New assignment", "owner_member_id": member["id"],
+    }).status_code == 422
+    assert client.delete(f"/api/records/members/{member['id']}?version={inactive['version']}").status_code == 409
+
+
 def test_explicit_bulk_role_change_checks_preview_and_updates_atomically(client, project):
     pid = project["id"]
     client.post("/api/records/members", json={"project_id": pid, "person": "Member-A", "role": "Engineer"})

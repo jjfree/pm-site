@@ -23,6 +23,7 @@ class Project(Record):
     code: str = Field(default="", max_length=60)
     client: str = Field(default="", max_length=160)
     owner: str = Field(default="", max_length=120)
+    owner_member_id: str = Field(default="", max_length=32)
     status: Literal["planning", "active", "at_risk", "paused", "completed"] = "active"
     status_reason: str = Field(default="", max_length=2000)
     summary: str = Field(default="", max_length=5000)
@@ -73,6 +74,7 @@ class ProjectRole(Record):
 class ProjectMember(Record):
     project_id: str
     person: str = Field(min_length=1, max_length=120)
+    alias: str = Field(default="", max_length=120)
     role: str = Field(default="", max_length=100)
     active: bool = True
 
@@ -94,6 +96,7 @@ class Issue(Record):
     title: str = Field(min_length=1, max_length=250)
     kind: Literal["issue", "risk", "change", "decision"] = "issue"
     owner: str = Field(default="", max_length=120)
+    owner_member_id: str = Field(default="", max_length=32)
     priority: Literal["low", "medium", "high", "critical"] = "medium"
     status: Literal["open", "in_progress", "resolved", "closed"] = "open"
     due: date | None = None
@@ -108,6 +111,7 @@ class Work(Record):
     title: str = Field(min_length=1, max_length=250)
     kind: Literal["task", "milestone"] = "task"
     owner: str = Field(default="", max_length=120)
+    owner_member_id: str = Field(default="", max_length=32)
     due: date | None = None
     status: Literal["todo", "doing", "done"] = "todo"
 
@@ -120,6 +124,7 @@ class Deliverable(Record):
     description: str = Field(default="", max_length=8000)
     control_ref: str = Field(default="", max_length=1000)
     owner: str = Field(default="", max_length=120)
+    owner_member_id: str = Field(default="", max_length=32)
     due: date | None = None
     source_marker: str = Field(default="", max_length=100)
     review: Literal["unknown", "complete", "question"] = "unknown"

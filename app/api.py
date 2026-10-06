@@ -103,6 +103,31 @@ def create_app(directory=None):
                 for row in store.list(kind, data["project_id"], db)
             ):
                 raise HTTPException(409, "此專案已有相同的角色或成員")
+        if kind == "members" and data["alias"]:
+            alias = data["alias"].casefold()
+            if any(
+                row["id"] != ident and alias in {
+                    row["person"].casefold(), row.get("alias", "").casefold()
+                }
+                for row in store.list("members", data["project_id"], db)
+            ):
+                raise HTTPException(409, "此專案已有相同的成員姓名或別名")
+        if kind == "members":
+            person = data["person"].casefold()
+            if any(
+                row["id"] != ident and person == row.get("alias", "").casefold()
+                for row in store.list("members", data["project_id"], db)
+            ):
+                raise HTTPException(409, "成員姓名與其他成員的別名相同")
+        if kind in {"projects", "works", "deliverables", "issues"} and data["owner_member_id"]:
+            project_id = ident if kind == "projects" else data["project_id"]
+            member = store.get("members", data["owner_member_id"], db)
+            old = store.get(kind, ident, db) if ident else None
+            if not member or member["project_id"] != project_id:
+                raise HTTPException(422, "負責人必須是此專案成員")
+            if not member["active"] and (not old or old.get("owner_member_id") != member["id"]):
+                raise HTTPException(422, "不可新指派停用的專案成員")
+            data["owner"] = member["person"]
         return data
 
     def project_bundle(ident, start=None, end=None):
@@ -284,6 +309,12 @@ def create_app(directory=None):
                         if row["id"] != ident
                     ):
                         raise HTTPException(409, "已有工時、單價或成員使用此項目；請改為停用")
+                    if kind == "members" and any(
+                        row.get("owner_member_id") == ident
+                        for related_kind in ("projects", "works", "deliverables", "issues")
+                        for row in store.list(related_kind)
+                    ):
+                        raise HTTPException(409, "已有專案或事項指定此成員為負責人；請改為停用")
             store.delete(kind, ident, version)
             return {"deleted": True}
         except KeyError as exc:

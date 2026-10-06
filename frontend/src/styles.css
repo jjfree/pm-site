@@ -1149,6 +1149,21 @@ footer span {
   display: block;
   margin-top: 4px;
 }
+.people-row .member-alias {
+  display: inline;
+  color: #71818e;
+  font-weight: 400;
+}
+.legacy-owner {
+  color: #8a9da7;
+}
+.owner-picker {
+  display: grid;
+  gap: 8px;
+}
+.owner-picker select {
+  margin: 0;
+}
 .people-actions {
   display: flex;
   align-items: center;
