@@ -1476,7 +1476,6 @@ function App() {
       "works",
       "deliverables",
     ]),
-    [scenarioId, setScenarioId] = useState(""),
     [recentReportId, setRecentReportId] = useState(""),
     [reportHistory, setReportHistory] = useState<Row[]>([]);
   const project = projects.find((p) => p.id === pid);
@@ -1619,7 +1618,6 @@ function App() {
         title: reportTitle,
         external,
         sections,
-        scenario_id: scenarioId,
         start,
         end,
       });
@@ -2481,27 +2479,12 @@ function App() {
                           />
                         </label>
                       </div>
-                      <label className="block-label">
-                        變更情境
-                        <select
-                          value={scenarioId}
-                          onChange={(e) => setScenarioId(e.target.value)}
-                        >
-                          <option value="">不加入情境</option>
-                          {(all.scenarios || []).map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
                       <div className="block-label">報告章節</div>
                       {[
                         "effort",
                         "issues",
                         "works",
                         "deliverables",
-                        "scenario",
                       ].map((k) => (
                         <label className="check" key={k}>
                           <input
@@ -2522,14 +2505,13 @@ function App() {
                                 issues: "議題與決策",
                                 works: "待辦與里程碑",
                                 deliverables: "交付與查核",
-                                scenario: "變更情境",
                               } as Row
                             )[k]
                           }
                         </label>
                       ))}
                       <button
-                        className="primary full"
+                        className="primary report-create-button"
                         onClick={report}
                         disabled={!pid}
                       >

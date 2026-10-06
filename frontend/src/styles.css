@@ -1035,6 +1035,10 @@ textarea {
 .report-settings .panel-head {
   padding: 22px 0;
 }
+.report-settings > .report-create-button {
+  width: auto;
+  margin: 0 0 18px;
+}
 .history-list > div {
   padding: 18px 23px;
   display: flex;
