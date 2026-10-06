@@ -414,6 +414,14 @@ th {
 .time-filters .ghost {
   justify-self: start;
 }
+.issue-filters .issue-search {
+  grid-column: span 2;
+}
+.issue-results {
+  padding: 0 20px 14px;
+  color: #8899a4;
+  font-size: 11px;
+}
 .time-no-results {
   padding: 28px 20px;
   color: #8899a4;
@@ -650,22 +658,6 @@ td small {
 .toolbar select {
   width: auto;
   min-width: 150px;
-}
-.search {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1px solid #dfe6e9;
-  background: #fff;
-  border-radius: 6px;
-  padding: 0 13px;
-  max-width: 400px;
-  flex: 1;
-  color: #95a4ad;
-}
-.search input {
-  border: 0;
-  background: transparent;
 }
 .tabs {
   display: flex;

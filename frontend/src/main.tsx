@@ -496,6 +496,107 @@ function TimeRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => v
   );
 }
 
+const issueColumns: [string, string][] = [
+  ["title", "事項"],
+  ["kind", "類型"],
+  ["priority", "優先級"],
+  ["owner", "負責人"],
+  ["due", "期限"],
+  ["status", "狀態"],
+  ["action", "處置行動"],
+];
+
+function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => void }) {
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [kind, setKind] = useState("");
+  const [priority, setPriority] = useState("");
+  const [owner, setOwner] = useState("");
+  const [dueFrom, setDueFrom] = useState("");
+  const [dueTo, setDueTo] = useState("");
+  const [sortKey, setSortKey] = useState("due");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const ownerOptions = [...new Set(rows.map((row) => String(row.owner || "")).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, "zh-TW"));
+  const filtered = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase("zh-TW");
+    const priorityOrder: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
+    const statusOrder: Record<string, number> = { open: 0, in_progress: 1, resolved: 2, closed: 3 };
+    const matches = rows.filter((row) =>
+      (!status || row.status === status) &&
+      (!kind || row.kind === kind) &&
+      (!priority || row.priority === priority) &&
+      (!owner || (owner === "__missing__" ? !row.owner : row.owner === owner)) &&
+      (!dueFrom || (row.due && row.due >= dueFrom)) &&
+      (!dueTo || (row.due && row.due <= dueTo)) &&
+      (!query || [row.title, row.owner, row.description, row.action, row.decision]
+        .some((value) => String(value || "").toLocaleLowerCase("zh-TW").includes(query)))
+    );
+    return matches.sort((a, b) => {
+      const left = String(a[sortKey] ?? "").trim();
+      const right = String(b[sortKey] ?? "").trim();
+      if (!left || !right) {
+        if (!left && right) return 1;
+        if (left && !right) return -1;
+      }
+      const result = sortKey === "priority"
+        ? priorityOrder[left] - priorityOrder[right]
+        : sortKey === "status"
+          ? statusOrder[left] - statusOrder[right]
+          : String(sortKey === "kind" ? name(left) : left)
+            .localeCompare(String(sortKey === "kind" ? name(right) : right), "zh-TW", { numeric: true });
+      if (result) return sortDirection === "asc" ? result : -result;
+      return String(a.id || "").localeCompare(String(b.id || ""));
+    });
+  }, [rows, search, status, kind, priority, owner, dueFrom, dueTo, sortKey, sortDirection]);
+  const sort = (key: string) => {
+    if (key === sortKey) setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    else {
+      setSortKey(key);
+      setSortDirection(key === "priority" ? "desc" : "asc");
+    }
+  };
+  const clearFilters = () => {
+    setSearch(""); setStatus(""); setKind(""); setPriority("");
+    setOwner(""); setDueFrom(""); setDueTo("");
+  };
+  return (
+    <section className="panel">
+      <div className="time-filters issue-filters">
+        <label className="issue-search">關鍵字
+          <input type="search" placeholder="搜尋標題、負責人或內容" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </label>
+        <label>狀態<select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">全部狀態</option>
+          {["open", "in_progress", "resolved", "closed"].map((value) => <option key={value} value={value}>{name(value)}</option>)}
+        </select></label>
+        <label>類型<select value={kind} onChange={(e) => setKind(e.target.value)}>
+          <option value="">全部類型</option>
+          {["issue", "risk", "change", "decision"].map((value) => <option key={value} value={value}>{name(value)}</option>)}
+        </select></label>
+        <label>優先級<select value={priority} onChange={(e) => setPriority(e.target.value)}>
+          <option value="">全部優先級</option>
+          {["critical", "high", "medium", "low"].map((value) => <option key={value} value={value}>{name(value)}</option>)}
+        </select></label>
+        <label>負責人<select value={owner} onChange={(e) => setOwner(e.target.value)}>
+          <option value="">全部負責人</option><option value="__missing__">未指定</option>
+          {ownerOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+        </select></label>
+        <label>期限起<input type="date" value={dueFrom} onChange={(e) => setDueFrom(e.target.value)} /></label>
+        <label>期限迄<input type="date" value={dueTo} onChange={(e) => setDueTo(e.target.value)} /></label>
+        <button className="ghost" onClick={clearFilters}>清除篩選</button>
+      </div>
+      <div className="issue-results" aria-live="polite">符合條件 {filtered.length} / {rows.length} 筆</div>
+      {filtered.length ? (
+        <DataTable rows={filtered} columns={issueColumns} onEdit={onEdit}
+          sortKey={sortKey} sortDirection={sortDirection} onSort={sort} />
+      ) : (
+        <div className="time-no-results">{rows.length ? "沒有符合篩選的事項" : "尚無事項"}</div>
+      )}
+    </section>
+  );
+}
+
 function ProjectPeoplePanel({
   projectId, members, roles, times, rates, onOpen, onBulkRole,
 }: {
@@ -1438,9 +1539,7 @@ function App() {
     [toast, setToast] = useState("");
   const [modal, setModal] = useState<{ kind: string; row?: Row } | null>(null),
     [tab, setTab] = useState("members"),
-    [projectTab, setProjectTab] = useState("works"),
-    [search, setSearch] = useState(""),
-    [filter, setFilter] = useState("all");
+    [projectTab, setProjectTab] = useState("works");
   const [start, setStart] = useState(""),
     [end, setEnd] = useState(""),
     [reportTitle, setReportTitle] = useState("專案進度報告"),
@@ -1632,13 +1731,6 @@ function App() {
     };
     img.src = u;
   }
-  const filteredIssues = (all.issues || []).filter(
-    (i) =>
-      (filter === "all" || i.status === filter) &&
-      (i.title + i.owner + i.description)
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -1661,8 +1753,6 @@ function App() {
                 className={page === i ? "nav-item selected" : "nav-item"}
                 onClick={() => {
                   setPage(i);
-                  setSearch("");
-                  setFilter("all");
                 }}
               >
                 <Icon size={19} />
@@ -1955,8 +2045,6 @@ function App() {
                             key={p.id}
                             onClick={() => {
                               setPid(p.id);
-                              setSearch("");
-                              setFilter("all");
                               setPage(3);
                             }}
                           >
@@ -2338,46 +2426,8 @@ function App() {
                 </>
               )}
               {page === 3 && (
-                <>
-                  <div className="toolbar">
-                    <div className="search">
-                      <Search size={16} />
-                      <input
-                        placeholder="搜尋標題、負責人或內容"
-                        value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                      />
-                    </div>
-                    <select
-                      value={filter}
-                      onChange={(e) => setFilter(e.target.value)}
-                    >
-                      <option value="all">全部狀態</option>
-                      {["open", "in_progress", "resolved", "closed"].map(
-                        (v) => (
-                          <option key={v} value={v}>
-                            {name(v)}
-                          </option>
-                        ),
-                      )}
-                    </select>
-                  </div>
-                  <section className="panel">
-                    <DataTable
-                      rows={filteredIssues}
-                      columns={[
-                        ["title", "事項"],
-                        ["kind", "類型"],
-                        ["priority", "優先級"],
-                        ["owner", "負責人"],
-                        ["due", "期限"],
-                        ["status", "狀態"],
-                        ["action", "處置行動"],
-                      ]}
-                      onEdit={(r) => openModal("issues", r)}
-                    />
-                  </section>
-                </>
+                <IssueRecordsTable key={pid} rows={all.issues || []}
+                  onEdit={(r) => openModal("issues", r)} />
               )}
               {page === 4 && (
                 <ImportView pid={pid} notify={notify} reload={reload} />
