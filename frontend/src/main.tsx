@@ -242,29 +242,6 @@ const schemas: Record<string, Field[]> = {
     { key: "notes", label: "問題／結論", type: "textarea" },
     { key: "evidence", label: "證據參照（文字或連結）" },
   ],
-  scenarios: [
-    { key: "name", label: "情境名稱", required: true },
-    { key: "removed_value", label: "減少的原交付價值", type: "number" },
-    {
-      key: "additional_revenue",
-      label: "新增／替代收入（優先使用）",
-      type: "number",
-    },
-    {
-      key: "billable_md",
-      label: "可請款 MD（收入未填時使用）",
-      type: "number",
-    },
-    { key: "sale_role", label: "售價角色" },
-    { key: "rate_date", label: "單價適用日", type: "date" },
-    { key: "cost_change", label: "剩餘成本變化（可負值）", type: "number" },
-    {
-      key: "status",
-      label: "情境狀態",
-      options: ["draft", "approved", "rejected"],
-    },
-    { key: "notes", label: "假設與說明", type: "textarea" },
-  ],
   payments: [
     { key: "title", label: "款項名稱", required: true },
     { key: "amount", label: "約定金額", type: "number", required: true },
@@ -290,7 +267,6 @@ const defaults: Row = {
   issues: { kind: "issue", priority: "medium", status: "open" },
   works: { kind: "task", status: "todo" },
   deliverables: { review: "unknown", result: "unknown", applicable: "unset" },
-  scenarios: { removed_value: "0", status: "draft" },
   payments: { invoiced: "0", received: "0" },
 };
 
@@ -752,7 +728,6 @@ function RecordModal({
                   issues: "事項",
                   works: "待辦／里程碑",
                   deliverables: "交付／查核",
-                  scenarios: "情境",
                   payments: "款項",
                 } as Row
               )[kind]
@@ -1517,7 +1492,6 @@ function App() {
         "issues",
         "works",
         "deliverables",
-        "scenarios",
         "payments",
       ];
       const results = await Promise.all(
@@ -2294,7 +2268,7 @@ function App() {
                     </ChartBox>
                   </div>
                   <div className="tabs">
-                    {["members", "times", "scenarios", "payments"].map((k) => (
+                    {["members", "times", "payments"].map((k) => (
                       <button
                         key={k}
                         className={tab === k ? "active" : ""}
@@ -2305,7 +2279,6 @@ function App() {
                             {
                               members: "成員、角色與單價",
                               times: "工時紀錄",
-                              scenarios: "收入情境",
                               payments: "款項與收款",
                             } as Row
                           )[k]
@@ -2319,7 +2292,6 @@ function App() {
                       <Plus size={15} />
                       {({
                         times: "新增工時",
-                        scenarios: "新增情境",
                         payments: "新增款項",
                       } as Row)[tab]}
                     </button>}
@@ -2348,42 +2320,20 @@ function App() {
                       />
                     ) : (
                       <DataTable
-                        rows={
-                          tab === "scenarios"
-                            ? analysis.scenarios
-                            : all[tab] || []
-                        }
-                        columns={
-                          tab === "scenarios"
-                              ? [
-                                  ["name", "情境"],
-                                  ["status", "狀態"],
-                                  ["replacement_revenue", "替代收入"],
-                                  ["net_revenue_decrease", "淨減收"],
-                                  ["revised_revenue", "修訂收入"],
-                                  ["revised_eac", "修訂成本"],
-                                ]
-                              : [
-                                  ["title", "款項"],
-                                  ["amount", "約定額"],
-                                  ["due", "日期"],
-                                  ["invoiced", "已開票"],
-                                  ["received", "已收款"],
-                                ]
-                        }
-                        onEdit={(r) =>
-                          openModal(
-                            tab,
-                            tab === "scenarios"
-                              ? all.scenarios.find((s) => s.id === r.id)
-                              : r,
-                          )
-                        }
+                        rows={all.payments || []}
+                        columns={[
+                          ["title", "款項"],
+                          ["amount", "約定額"],
+                          ["due", "日期"],
+                          ["invoiced", "已開票"],
+                          ["received", "已收款"],
+                        ]}
+                        onEdit={(r) => openModal("payments", r)}
                       />
                     )}
                   </section>}
                   <div className="notice">
-                    售價與內部成本分開設定，單價按有效期間套用；核定收入、開票與收款各自記錄。情境不覆蓋原核定資料。
+                    成本單價按有效期間套用；核定收入、開票與收款各自記錄。
                   </div>
                 </>
               )}
