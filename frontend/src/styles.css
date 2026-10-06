@@ -1104,6 +1104,59 @@ footer {
 footer span {
   color: #acb9bf;
 }
+.people-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.people-layout .panel-head {
+  gap: 12px;
+}
+.people-layout .panel-head .muted {
+  margin-top: 5px;
+}
+.people-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid #e8eef0;
+  padding: 13px 0;
+}
+.people-row > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+.people-row strong,
+.people-row span {
+  display: block;
+}
+.people-row strong {
+  overflow-wrap: anywhere;
+}
+.people-row span,
+.people-empty,
+.field-hint {
+  color: #71818e;
+  font-size: 12px;
+}
+.people-row .people-meta {
+  text-align: right;
+  white-space: nowrap;
+}
+.people-row .link {
+  white-space: nowrap;
+}
+.people-row.legacy {
+  background: #f7faf9;
+}
+.people-empty {
+  padding: 18px 0;
+}
+.field-hint {
+  display: block;
+  margin-top: 4px;
+}
 @media (min-width: 1500px) {
   .content {
     padding: 40px 48px;
@@ -1149,6 +1202,9 @@ footer span {
   }
   .two-columns,
   .import-grid {
+    grid-template-columns: 1fr;
+  }
+  .people-layout {
     grid-template-columns: 1fr;
   }
   .report-layout {
@@ -1205,6 +1261,12 @@ footer span {
   .report-layout,
   .import-grid {
     grid-template-columns: 1fr;
+  }
+  .people-row {
+    flex-wrap: wrap;
+  }
+  .people-row .people-meta {
+    text-align: left;
   }
   .project-detail {
     flex-direction: column;

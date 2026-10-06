@@ -96,6 +96,13 @@ def create_app(directory=None):
                     r["end"] or "9999-12-31"
                 ):
                     raise HTTPException(409, "同一角色／人員／用途的單價有效期間重疊")
+        if kind in {"roles", "members"}:
+            key = "name" if kind == "roles" else "person"
+            if any(
+                row["id"] != ident and row[key].casefold() == data[key].casefold()
+                for row in store.list(kind, data["project_id"], db)
+            ):
+                raise HTTPException(409, "此專案已有相同的角色或成員")
         return data
 
     def project_bundle(ident, start=None, end=None):
@@ -167,6 +174,40 @@ def create_app(directory=None):
         rows = store.list(kind, project_id)
         return [{key: value for key, value in row.items() if key != "tax_basis"} for row in rows] if kind == "rates" else rows
 
+    @app.post("/api/times/bulk-role")
+    def bulk_time_role(payload: dict):
+        project_id, person, role = payload.get("project_id"), payload.get("person"), payload.get("role")
+        expected = payload.get("entries")
+        if not all(isinstance(value, str) and value for value in (project_id, person, role)) or len(role) > 100:
+            raise HTTPException(422, "請選擇成員與預設角色")
+        if not isinstance(expected, list) or len(expected) > 20000 or any(
+            not isinstance(item, dict) or not isinstance(item.get("id"), str) or not isinstance(item.get("version"), int)
+            for item in expected
+        ):
+            raise HTTPException(422, "工時清單格式錯誤")
+        versions = {item["id"]: item["version"] for item in expected}
+        if len(versions) != len(expected):
+            raise HTTPException(422, "工時清單含重複紀錄")
+        with store.connect() as db:
+            if not any(
+                member["person"] == person and member["role"] == role and member["active"]
+                for member in store.list("members", project_id, db)
+            ):
+                raise HTTPException(422, "成員或預設角色已變更，請重新整理")
+            affected = [
+                entry for entry in store.list("times", project_id, db)
+                if entry["person"] == person and entry["role"] != role
+            ]
+            if {entry["id"] for entry in affected} != set(versions) or any(
+                entry["version"] != versions[entry["id"]] for entry in affected
+            ):
+                raise HTTPException(409, "工時清單已變更，請重新整理並再次確認")
+            for entry in affected:
+                data = {key: value for key, value in entry.items() if key not in {"id", "version", "created", "updated"}}
+                data["role"] = role
+                store.write("times", data, entry["id"], entry["version"], db)
+            return {"updated": len(affected)}
+
     @app.post("/api/records/{kind}")
     def create_record(kind: str, payload: dict):
         with store.connect() as db:
@@ -207,27 +248,19 @@ def create_app(directory=None):
     @app.put("/api/records/{kind}/{ident}")
     def update_record(kind: str, ident: str, payload: dict):
         version = payload.pop("version", None)
-        apply_role_to_person = payload.pop("apply_role_to_person", False)
+        if payload.pop("apply_role_to_person", False):
+            raise HTTPException(422, "請使用成員頁的「更正既有工時」功能，或逐筆修改歷史工時")
         with store.connect() as db:
             try:
                 data = validate(kind, payload, ident, db)
                 old = store.get(kind, ident, db)
                 if old and kind != "projects" and old["project_id"] != data["project_id"]:
                     raise HTTPException(422, "不可透過編輯移動資料至另一專案")
-                if apply_role_to_person:
-                    if kind != "times" or not data["role"]:
-                        raise HTTPException(422, "請選擇工時角色")
-                    if not any(
-                        rate["role"] == data["role"] for rate in store.list("rates", data["project_id"], db)
-                    ):
-                        raise HTTPException(422, "角色已不在單價設定中，請重新整理")
+                if old and kind in {"roles", "members"}:
+                    key = "name" if kind == "roles" else "person"
+                    if old[key] != data[key]:
+                        raise HTTPException(422, "已建檔的角色或成員不可更名；請新增資料並停用舊項目")
                 saved = store.write(kind, data, ident, version, db)
-                if apply_role_to_person:
-                    for entry in store.list("times", data["project_id"], db):
-                        if entry["id"] != ident and entry["person"] == data["person"] and entry["role"] != data["role"]:
-                            updated = {key: value for key, value in entry.items() if key not in {"id", "version", "created", "updated"}}
-                            updated["role"] = data["role"]
-                            store.write("times", updated, entry["id"], entry["version"], db)
                 return saved
             except KeyError as exc:
                 raise HTTPException(404, "紀錄不存在") from exc
@@ -238,6 +271,19 @@ def create_app(directory=None):
     def delete_record(kind: str, ident: str, version: int):
         check_kind(kind)
         try:
+            if kind in {"roles", "members"}:
+                record = store.get(kind, ident)
+                if record:
+                    key = "role" if kind == "roles" else "person"
+                    value = record["name"] if kind == "roles" else record["person"]
+                    related = ("rates", "times", "members") if kind == "roles" else ("rates", "times")
+                    if any(
+                        row.get(key) == value
+                        for related_kind in related
+                        for row in store.list(related_kind, record["project_id"])
+                        if row["id"] != ident
+                    ):
+                        raise HTTPException(409, "已有工時、單價或成員使用此項目；請改為停用")
             store.delete(kind, ident, version)
             return {"deleted": True}
         except KeyError as exc:

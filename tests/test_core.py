@@ -100,7 +100,7 @@ def test_legacy_rate_tax_is_hidden_from_records_and_exports(client, project):
     assert "tax_basis" not in exported.splitlines()[0]
 
 
-def test_assigning_time_role_updates_same_person_and_cost(client, project):
+def test_time_role_edit_preserves_other_entries_and_cost(client, project):
     pid = project["id"]
     client.post(
         "/api/records/rates",
@@ -121,22 +121,67 @@ def test_assigning_time_role_updates_same_person_and_cost(client, project):
 
     response = client.put(
         f"/api/records/times/{entries[0]['id']}",
-        json={**body(entries[0]), "role": "Engineer", "apply_role_to_person": True},
+        json={**body(entries[0]), "role": "Engineer"},
     )
     assert response.status_code == 200
     rows = client.get(f"/api/records/times?project_id={pid}").json()
-    assert [row["role"] for row in rows] == ["Engineer", "Engineer", ""]
-    assert rows[1]["version"] == entries[1]["version"] + 1
+    assert [row["role"] for row in rows] == ["Engineer", "Old", ""]
+    assert rows[1]["version"] == entries[1]["version"]
     assert client.get(f"/api/records/times?project_id={other_project['id']}").json()[0]["role"] == ""
-    assert client.get(f"/api/analytics/{pid}").json()["summary"]["known_labor_cost"] == "8000.00"
+    assert client.get(f"/api/analytics/{pid}").json()["summary"]["known_labor_cost"] == "4000.00"
+
+    rejected = client.put(
+        f"/api/records/times/{entries[1]['id']}",
+        json={**body(entries[1]), "role": "Engineer", "apply_role_to_person": True},
+    )
+    assert rejected.status_code == 422
 
     stale = client.put(
         f"/api/records/times/{entries[0]['id']}",
-        json={**body(entries[0]), "role": "Engineer", "apply_role_to_person": True},
+        json={**body(entries[0]), "role": "Engineer"},
     )
     assert stale.status_code == 409
     assert client.get(f"/api/records/times?project_id={pid}").json() == rows
     assert client.get(f"/api/records/times?project_id={other_project['id']}").json()[0] == outside
+
+
+def test_project_members_and_roles_are_unique_and_do_not_rewrite_history(client, project):
+    pid = project["id"]
+    role = client.post("/api/records/roles", json={"project_id": pid, "name": "Engineer"}).json()
+    assert role["active"] is True
+    assert client.post("/api/records/roles", json={"project_id": pid, "name": "engineer"}).status_code == 409
+    member = client.post("/api/records/members", json={"project_id": pid, "person": "Member-A", "role": "Engineer"}).json()
+    assert client.post("/api/records/members", json={"project_id": pid, "person": "member-a"}).status_code == 409
+    assert client.put(f"/api/records/roles/{role['id']}", json={**body(role), "name": "Renamed"}).status_code == 422
+    assert client.put(f"/api/records/members/{member['id']}", json={**body(member), "person": "Renamed"}).status_code == 422
+    time = client.post("/api/records/times", json={"project_id": pid, "person": "Member-A", "role": "Engineer", "date": "2025-01-01", "hours": 8}).json()
+    updated = client.put(f"/api/records/members/{member['id']}", json={**body(member), "role": "PM"})
+    assert updated.status_code == 200
+    assert client.get(f"/api/records/times?project_id={pid}").json()[0] == time
+    assert client.delete(f"/api/records/members/{member['id']}?version=2").status_code == 409
+    assert client.delete(f"/api/records/roles/{role['id']}?version=1").status_code == 409
+    assert client.put(f"/api/records/roles/{role['id']}", json={**body(role), "active": False}).json()["active"] is False
+    other = client.post("/api/records/projects", json={"name": "Other", "tax_basis": "exclusive"}).json()
+    assert client.post("/api/records/roles", json={"project_id": other["id"], "name": "Engineer"}).status_code == 200
+    assert client.post("/api/records/members", json={"project_id": other["id"], "person": "Member-A"}).status_code == 200
+
+
+def test_explicit_bulk_role_change_checks_preview_and_updates_atomically(client, project):
+    pid = project["id"]
+    client.post("/api/records/members", json={"project_id": pid, "person": "Member-A", "role": "Engineer"})
+    entries = [client.post("/api/records/times", json={
+        "project_id": pid, "person": "Member-A", "role": "", "date": "2025-01-01", "hours": 8,
+    }).json() for _ in range(2)]
+    payload = {"project_id": pid, "person": "Member-A", "role": "Engineer",
+               "entries": [{"id": row["id"], "version": row["version"]} for row in entries]}
+    assert client.post("/api/times/bulk-role", json={**payload, "entries": payload["entries"][:1]}).status_code == 409
+    assert client.get(f"/api/records/times?project_id={pid}").json() == entries
+    result = client.post("/api/times/bulk-role", json=payload)
+    assert result.status_code == 200 and result.json()["updated"] == 2
+    updated = client.get(f"/api/records/times?project_id={pid}").json()
+    assert all(row["role"] == "Engineer" and row["version"] == 2 for row in updated)
+    assert client.post("/api/times/bulk-role", json=payload).status_code == 409
+    assert client.get(f"/api/records/times?project_id={pid}").json() == updated
 
 
 def fixtures():

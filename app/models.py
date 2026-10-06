@@ -64,6 +64,19 @@ class Rate(Record):
         return self
 
 
+class ProjectRole(Record):
+    project_id: str
+    name: str = Field(min_length=1, max_length=100)
+    active: bool = True
+
+
+class ProjectMember(Record):
+    project_id: str
+    person: str = Field(min_length=1, max_length=120)
+    role: str = Field(default="", max_length=100)
+    active: bool = True
+
+
 class TimeEntry(Record):
     project_id: str
     person: str = Field(min_length=1, max_length=120)
@@ -142,6 +155,8 @@ class Payment(Record):
 
 MODELS = {
     "projects": Project,
+    "roles": ProjectRole,
+    "members": ProjectMember,
     "rates": Rate,
     "times": TimeEntry,
     "issues": Issue,

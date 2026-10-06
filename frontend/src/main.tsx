@@ -156,6 +156,15 @@ const schemas: Record<string, Field[]> = {
     { key: "budget_start", label: "預算範圍起日（空白＝全期）", type: "date" },
     { key: "budget_end", label: "預算範圍迄日", type: "date" },
   ],
+  roles: [
+    { key: "name", label: "工時角色名稱", required: true },
+    { key: "active", label: "狀態", options: ["true", "false"] },
+  ],
+  members: [
+    { key: "person", label: "成員姓名", required: true },
+    { key: "role", label: "預設工時角色" },
+    { key: "active", label: "狀態", options: ["true", "false"] },
+  ],
   times: [
     { key: "person", label: "人員", required: true },
     { key: "date", label: "工作日期", type: "date", required: true },
@@ -271,6 +280,8 @@ const defaults: Row = {
     tax_basis: "",
     other_cost: "0",
   },
+  roles: { active: true },
+  members: { active: true },
   rates: {
     purpose: "cost",
     unit: "day",
@@ -509,11 +520,86 @@ function TimeRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => v
   );
 }
 
+function ProjectPeoplePanel({
+  members, roles, times, rates, onOpen, onBulkRole,
+}: {
+  members: Row[];
+  roles: Row[];
+  times: Row[];
+  rates: Row[];
+  onOpen: (kind: string, row?: Row) => void;
+  onBulkRole: (member: Row) => void;
+}) {
+  const roster = new Map(members.map((member) => [String(member.person).toLocaleLowerCase(), member]));
+  const legacyPeople = [...new Set(times.map((entry) => String(entry.person || "")).filter(Boolean))]
+    .filter((person) => !roster.has(person.toLocaleLowerCase())).sort((a, b) => a.localeCompare(b, "zh-TW"));
+  const registeredRoles = new Map(roles.map((role) => [String(role.name).toLocaleLowerCase(), role]));
+  const legacyRoles = [...new Set([
+    ...times.map((entry) => String(entry.role || "")),
+    ...rates.map((rate) => String(rate.role || "")),
+    ...members.map((member) => String(member.role || "")),
+  ].filter(Boolean))].filter((role) => !registeredRoles.has(role.toLocaleLowerCase()))
+    .sort((a, b) => a.localeCompare(b, "zh-TW"));
+  const hoursFor = (person: string) => times
+    .filter((entry) => entry.person === person)
+    .reduce((sum, entry) => sum + Number(entry.hours || 0), 0);
+  const inferredRole = (person: string) => {
+    const names = [...new Set(times.filter((entry) => entry.person === person).map((entry) => String(entry.role || "")).filter(Boolean))];
+    return names.length === 1 ? names[0] : "";
+  };
+  return (
+    <div className="people-layout">
+      <section className="panel">
+        <div className="panel-head"><div><h3>專案成員</h3><p className="muted">{members.length} 位已建檔 · {legacyPeople.length} 位待確認</p></div>
+          <button className="secondary" onClick={() => onOpen("members")}><Plus size={15} />新增成員</button></div>
+        {[...members].sort((a, b) => String(a.person).localeCompare(String(b.person), "zh-TW")).map((member) => (
+          <div className="people-row" key={member.id}>
+            <div><strong>{member.person}</strong><span>{member.role || "未指定角色"} · {member.active ? "啟用" : "停用"}</span></div>
+            <div className="people-meta"><span>{num(hoursFor(member.person))} hr</span>
+              <span>{member.role && rates.some((rate) => rate.purpose === "cost" && rate.role === member.role && (!rate.person || rate.person === member.person)) ? "已設定成本單價" : "缺成本單價"}</span></div>
+            {member.active && member.role && times.some((entry) => entry.person === member.person && entry.role !== member.role) &&
+              <button className="link" onClick={() => onBulkRole(member)}>更正既有工時</button>}
+            <button className="link" onClick={() => onOpen("members", member)}>編輯<ChevronRight size={14} /></button>
+          </div>
+        ))}
+        {legacyPeople.map((person) => (
+          <div className="people-row legacy" key={person}>
+            <div><strong>{person}</strong><span>工時中已有此人 · 尚未建檔</span></div>
+            <div className="people-meta"><span>{num(hoursFor(person))} hr</span><span>{inferredRole(person) || "角色待確認"}</span></div>
+            <button className="link" onClick={() => onOpen("members", { person, role: inferredRole(person), active: true })}>加入成員<ChevronRight size={14} /></button>
+          </div>
+        ))}
+        {!members.length && !legacyPeople.length && <p className="people-empty">尚無成員。新增成員後，記錄工時時即可選用。</p>}
+      </section>
+      <section className="panel">
+        <div className="panel-head"><div><h3>工時角色</h3><p className="muted">角色可先建立，單價另行設定</p></div>
+          <button className="secondary" onClick={() => onOpen("roles")}><Plus size={15} />新增角色</button></div>
+        {[...roles].sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-TW")).map((role) => (
+          <div className="people-row" key={role.id}>
+            <div><strong>{role.name}</strong><span>{role.active ? "啟用" : "停用"}</span></div>
+            <div className="people-meta"><span>{rates.filter((rate) => rate.role === role.name && rate.purpose === "cost").length} 筆成本單價</span></div>
+            <button className="link" onClick={() => onOpen("roles", role)}>編輯<ChevronRight size={14} /></button>
+          </div>
+        ))}
+        {legacyRoles.map((role) => (
+          <div className="people-row legacy" key={role}>
+            <div><strong>{role}</strong><span>既有工時或單價使用 · 尚未建檔</span></div>
+            <button className="link" onClick={() => onOpen("roles", { name: role, active: true })}>加入角色<ChevronRight size={14} /></button>
+          </div>
+        ))}
+        {!roles.length && !legacyRoles.length && <p className="people-empty">尚無角色。先新增工時角色，再設定成本單價。</p>}
+      </section>
+    </div>
+  );
+}
+
 function RecordModal({
   kind,
   row,
   pid,
   rates,
+  members,
+  roleNames,
   close,
   saved,
 }: {
@@ -521,6 +607,8 @@ function RecordModal({
   row?: Row;
   pid: string;
   rates: Row[];
+  members: Row[];
+  roleNames: string[];
   close: () => void;
   saved: () => void;
 }) {
@@ -547,10 +635,11 @@ function RecordModal({
   });
   const [err, setErr] = useState(""),
     [busy, setBusy] = useState(false);
+  const isExisting = !!row?.id;
   const costEditorRef = useRef<HTMLElement>(null);
-  const roleOptions = [...new Set(rates.map((rate) => String(rate.role)))].sort();
+  const roleOptions = roleNames;
   const currentRole = String(form.role || "");
-  const roleChanged = kind === "times" && !!row && !!currentRole && currentRole !== row.role;
+  const memberNames = members.filter((member) => member.active).map((member) => String(member.person));
   const otherCostTotal = costItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   function updateCostItem(index: number, key: string, value: string) {
     setCostItems((items) => items.map((item, i) => i === index ? { ...item, [key]: value } : item));
@@ -574,6 +663,7 @@ function RecordModal({
                 : v === "false"
                   ? false
                   : v;
+        if (f.key === "active") v = v === true || v === "true";
         body[f.key] = v;
       });
       if (kind === "projects") {
@@ -586,15 +676,14 @@ function RecordModal({
         }));
       }
       if (kind !== "projects") body.project_id = pid;
-      if (row) {
+      if (isExisting) {
         body.version = row.version;
         if (row.source_id) body.source_id = row.source_id;
         if (row.source_marker) body.source_marker = row.source_marker;
-        if (roleChanged) body.apply_role_to_person = true;
       }
       await api(
-        "/records/" + kind + (row ? "/" + row.id : ""),
-        row ? "PUT" : "POST",
+        "/records/" + kind + (isExisting ? "/" + row!.id : ""),
+        isExisting ? "PUT" : "POST",
         body,
       );
       saved();
@@ -627,11 +716,13 @@ function RecordModal({
       >
         <div className="modal-head">
           <h2>
-            {row ? "編輯" : "新增"}
+            {isExisting ? "編輯" : "新增"}
             {
               (
                 {
                   projects: "專案",
+                  roles: "工時角色",
+                  members: "專案成員",
                   times: "工時",
                   rates: "單價",
                   issues: "事項",
@@ -667,16 +758,16 @@ function RecordModal({
               >
                 {f.label}
                 {f.required && <b className="required"> *</b>}
-                {kind === "times" && f.key === "role" ? (
+                {(kind === "times" || kind === "members") && f.key === "role" ? (
                   <select
                     value={currentRole}
                     onChange={(e) =>
                       setForm({ ...form, role: e.target.value })
                     }
                   >
-                    <option value="">請選擇角色</option>
+                    <option value="">未指定角色</option>
                     {currentRole && !roleOptions.includes(currentRole) && (
-                      <option value={currentRole}>{currentRole}（未在單價設定）</option>
+                      <option value={currentRole}>{currentRole}（既有角色）</option>
                     )}
                     {roleOptions.map((role) => (
                       <option key={role} value={role}>
@@ -684,6 +775,28 @@ function RecordModal({
                       </option>
                     ))}
                   </select>
+                ) : kind === "times" && f.key === "person" ? (
+                  <>
+                    <input
+                      list="project-member-options"
+                      required
+                      value={form.person ?? ""}
+                      onChange={(e) => {
+                        const person = e.target.value;
+                        const member = members.find((candidate) => candidate.active && candidate.person === person);
+                        setForm({ ...form, person, role: member && roleOptions.includes(member.role) ? member.role : "" });
+                      }}
+                    />
+                    <datalist id="project-member-options">
+                      {memberNames.map((person) => <option key={person} value={person} />)}
+                    </datalist>
+                    <small className="field-hint">選擇成員會帶入預設角色；也可輸入尚未建檔的人員。</small>
+                  </>
+                ) : kind === "rates" && f.key === "role" ? (
+                  <>
+                    <input list="project-role-options" required value={form.role ?? ""} onChange={(e) => setForm({ ...form, role: e.target.value })} />
+                    <datalist id="project-role-options">{roleOptions.map((role) => <option key={role} value={role} />)}</datalist>
+                  </>
                 ) : f.options ? (
                   <select
                     required={f.required}
@@ -699,6 +812,8 @@ function RecordModal({
                       <option key={v} value={v}>
                         {v === ""
                           ? "請選擇含稅／未稅"
+                          : f.key === "active"
+                          ? v === "true" ? "啟用" : "停用"
                           : v === "unset"
                           ? "未確認"
                           : v === "true"
@@ -721,6 +836,7 @@ function RecordModal({
                     type={f.type || "text"}
                     step={f.type === "number" ? "0.01" : undefined}
                     required={f.required}
+                    readOnly={isExisting && ((kind === "roles" && f.key === "name") || (kind === "members" && f.key === "person"))}
                     value={form[f.key] ?? ""}
                     onChange={(e) =>
                       setForm({ ...form, [f.key]: e.target.value })
@@ -776,14 +892,10 @@ function RecordModal({
               <div className="other-cost-total">明細合計：{num(otherCostTotal)} {form.currency || "TWD"}</div>
             </section>
           )}
-          {kind === "times" && roleChanged && (
-            <div className="notice">
-              儲存後，會將此角色套用至本專案同姓名的所有工時紀錄。
-            </div>
-          )}
+          {(kind === "times" || kind === "members") && <div className="notice">成員的預設角色只帶入新工時；編輯工時角色只修改這一筆紀錄。</div>}
           {err && <div className="error">{err}</div>}
           <div className="modal-foot">
-            {row && (
+            {isExisting && !["roles", "members"].includes(kind) && (
               <button type="button" className="danger ghost" onClick={remove}>
                 刪除
               </button>
@@ -1326,7 +1438,7 @@ function App() {
     [error, setError] = useState(""),
     [toast, setToast] = useState("");
   const [modal, setModal] = useState<{ kind: string; row?: Row } | null>(null),
-    [tab, setTab] = useState("times"),
+    [tab, setTab] = useState("members"),
     [projectTab, setProjectTab] = useState("works"),
     [search, setSearch] = useState(""),
     [filter, setFilter] = useState("all");
@@ -1375,6 +1487,8 @@ function App() {
     }
     try {
       const kinds = [
+        "members",
+        "roles",
         "times",
         "rates",
         "issues",
@@ -1426,6 +1540,29 @@ function App() {
         .catch((e) => setError(e.message));
   }, [page]);
   const summary = analysis?.summary;
+  const inactiveRoleNames = new Set((all.roles || []).filter((role) => !role.active).map((role) => String(role.name).toLocaleLowerCase()));
+  const roleNames = [...new Set([
+    ...(all.roles || []).filter((role) => role.active).map((role) => String(role.name)),
+    ...(all.members || []).map((member) => String(member.role || "")),
+    ...(all.rates || []).map((rate) => String(rate.role || "")),
+    ...(all.times || []).map((entry) => String(entry.role || "")),
+  ].filter((role) => role && !inactiveRoleNames.has(role.toLocaleLowerCase())))].sort((a, b) => a.localeCompare(b, "zh-TW"));
+  async function bulkMemberRole(member: Row) {
+    const entries = (all.times || []).filter((entry) => entry.person === member.person && entry.role !== member.role);
+    if (!entries.length) return;
+    if (!window.confirm(`將 ${member.person} 的 ${entries.length} 筆既有工時改為「${member.role}」？歷史人工成本可能變動，請確認這些紀錄都應使用此角色。`)) return;
+    try {
+      const result = await api("/times/bulk-role", "POST", {
+        project_id: pid, person: member.person, role: member.role,
+        entries: entries.map((entry) => ({ id: entry.id, version: entry.version })),
+      });
+      reload();
+      notify(`已更正 ${result.updated} 筆工時角色`);
+    } catch (e) {
+      setError((e as Error).message);
+      reload();
+    }
+  }
   const openModal = (kind: string, row?: Row) => {
     if (kind !== "projects" && !pid) {
       notify("請先建立專案");
@@ -2130,7 +2267,7 @@ function App() {
                     </ChartBox>
                   </div>
                   <div className="tabs">
-                    {["times", "rates", "scenarios", "payments"].map((k) => (
+                    {["members", "times", "rates", "scenarios", "payments"].map((k) => (
                       <button
                         key={k}
                         className={tab === k ? "active" : ""}
@@ -2139,6 +2276,7 @@ function App() {
                         {
                           (
                             {
+                              members: "成員與角色",
                               times: "工時紀錄",
                               rates: "單價設定",
                               scenarios: "收入情境",
@@ -2148,7 +2286,7 @@ function App() {
                         }
                       </button>
                     ))}
-                    <button
+                    {tab !== "members" && <button
                       className="tab-action"
                       onClick={() => openModal(tab)}
                     >
@@ -2159,16 +2297,23 @@ function App() {
                         scenarios: "新增情境",
                         payments: "新增款項",
                       } as Row)[tab]}
-                    </button>
-                    <a
+                    </button>}
+                    {tab !== "members" && <a
                       className="tab-action"
                       href={`/api/exports/${tab}?project_id=${pid}&fmt=xlsx`}
                     >
                       <Download size={15} />
                       Excel
-                    </a>
+                    </a>}
                   </div>
-                  <section className="panel">
+                  {tab === "members" ? <ProjectPeoplePanel
+                    members={all.members || []}
+                    roles={all.roles || []}
+                    times={all.times || []}
+                    rates={all.rates || []}
+                    onOpen={openModal}
+                    onBulkRole={bulkMemberRole}
+                  /> : <section className="panel">
                     {tab === "times" ? (
                       <TimeRecordsTable
                         key={pid}
@@ -2220,7 +2365,7 @@ function App() {
                         }
                       />
                     )}
-                  </section>
+                  </section>}
                   <div className="notice">
                     售價與內部成本分開設定，單價按有效期間套用；核定收入、開票與收款各自記錄。情境不覆蓋原核定資料。
                   </div>
@@ -2466,6 +2611,8 @@ function App() {
           row={modal.row}
           pid={pid}
           rates={(all.rates || []).filter((rate) => rate.project_id === pid)}
+          members={all.members || []}
+          roleNames={roleNames}
           close={() => setModal(null)}
           saved={reload}
         />
