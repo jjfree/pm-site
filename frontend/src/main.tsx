@@ -1477,7 +1477,7 @@ function App() {
       "deliverables",
     ]),
     [scenarioId, setScenarioId] = useState(""),
-    [snapshot, setSnapshot] = useState<Row | null>(null),
+    [recentReportId, setRecentReportId] = useState(""),
     [reportHistory, setReportHistory] = useState<Row[]>([]);
   const project = projects.find((p) => p.id === pid);
   function notify(s: string) {
@@ -1555,7 +1555,7 @@ function App() {
   }, []);
   useEffect(() => {
     loadProject();
-    setSnapshot(null);
+    setRecentReportId("");
   }, [pid, start, end]);
   useEffect(() => {
     if (page === 5)
@@ -1614,18 +1614,23 @@ function App() {
   }
   async function report() {
     try {
-      setSnapshot(
-        await api("/reports", "POST", {
-          project_id: pid,
-          title: reportTitle,
-          external,
-          sections,
-          scenario_id: scenarioId,
-          start,
-          end,
-        }),
-      );
-      setReportHistory(await api("/reports"));
+      const created = await api("/reports", "POST", {
+        project_id: pid,
+        title: reportTitle,
+        external,
+        sections,
+        scenario_id: scenarioId,
+        start,
+        end,
+      });
+      setRecentReportId(created.id);
+      setReportHistory((items) => [{
+        id: created.id,
+        at: created.snapshot.at,
+        title: created.snapshot.title,
+        external: created.snapshot.external,
+      }, ...items]);
+      api("/reports").then(setReportHistory).catch(() => {});
       notify("報告快照已建立");
     } catch (e) {
       setError((e as Error).message);
@@ -2432,7 +2437,7 @@ function App() {
               {page === 5 && (
                 <>
                   <div className="report-layout">
-                    <section className="panel">
+                    <section className="panel report-settings">
                       <div className="panel-head">
                         <h3>報告設定</h3>
                         <FileChartColumn size={18} />
@@ -2534,78 +2539,35 @@ function App() {
                         期間篩選只套用工時；其餘章節為截點當下狀態。對外摘要與標題請自行確認適合分享。
                       </p>
                     </section>
-                    <section className="panel report-preview">
+                    <section className="panel report-history">
                       <div className="panel-head">
-                        <h3>快照預覽</h3>
-                        <span className="muted">匯出後不隨資料更新</span>
+                        <h3>已封存報告</h3>
+                        <span className="muted">建立後可直接下載；快照固定保存於本機</span>
                       </div>
-                      {snapshot ? (
-                        <>
-                          <div className="slide-preview">
-                            <span className="eyebrow">PROJECT REPORT</span>
-                            <h2>{snapshot.snapshot.title}</h2>
-                            <h3>{snapshot.snapshot.project.name}</h3>
-                            <p>
-                              {snapshot.snapshot.project.summary ||
-                                "尚未填寫摘要"}
-                            </p>
-                            <small>
-                              {snapshot.snapshot.at.slice(0, 10)} ·{" "}
-                              {snapshot.snapshot.external ? "對外版" : "內部版"}
-                            </small>
-                          </div>
-                          <div className="snapshot-info">
-                            <span>
-                              {snapshot.snapshot.issues.length} 件事項
-                            </span>
-                            <span>{snapshot.snapshot.works.length} 筆工作</span>
-                            <span>
-                              {snapshot.snapshot.deliverables.length} 項交付
-                            </span>
-                          </div>
-                          <a
-                            className="primary"
-                            href={`/api/reports/${snapshot.id}/pptx`}
-                          >
-                            <Download size={16} />
-                            下載可編輯 PowerPoint
-                          </a>
-                        </>
+                      {reportHistory.length ? (
+                        <div className="history-list">
+                          {reportHistory.map((r) => (
+                            <div className={r.id === recentReportId ? "recent-report" : ""} key={r.id}>
+                              <div>
+                                <strong>{r.title || "專案報告"}</strong>
+                                {r.id === recentReportId && <span className="recent-report-label">剛建立</span>}
+                                <small>
+                                  {r.at.slice(0, 19).replace("T", " ")} ·{" "}
+                                  {r.external ? "對外版" : "內部版"}
+                                </small>
+                              </div>
+                              <a className="link" href={`/api/reports/${r.id}/pptx`}>
+                                <Download size={15} />
+                                下載 PPTX
+                              </a>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
-                        <Empty text="建立快照以預覽報告" />
+                        <Empty text="尚無封存報告" />
                       )}
                     </section>
                   </div>
-                  <section className="panel">
-                    <div className="panel-head">
-                      <h3>已封存報告</h3>
-                      <span className="muted">本機保存</span>
-                    </div>
-                    {reportHistory.length ? (
-                      <div className="history-list">
-                        {reportHistory.map((r) => (
-                          <div key={r.id}>
-                            <div>
-                              <strong>{r.title || "專案報告"}</strong>
-                              <small>
-                                {r.at.slice(0, 19).replace("T", " ")} ·{" "}
-                                {r.external ? "對外版" : "內部版"}
-                              </small>
-                            </div>
-                            <a
-                              className="link"
-                              href={`/api/reports/${r.id}/pptx`}
-                            >
-                              <Download size={15} />
-                              PPTX
-                            </a>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <Empty text="尚無封存報告" />
-                    )}
-                  </section>
                 </>
               )}
             </>
