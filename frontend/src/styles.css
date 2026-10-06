@@ -1,5 +1,9 @@
 :root {
-  font-family: Inter, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  --font-family-ui: Inter, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  --font-size-secondary: 11px;
+  --color-section-divider: #e8eef0;
+  --color-section-soft: #f7faf9;
+  font-family: var(--font-family-ui);
   color: #263d4c;
   background: #f5f7f9;
   font-synthesis: none;
@@ -1106,9 +1110,12 @@ footer span {
 }
 .people-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(300px, 0.9fr) minmax(0, 1.4fr);
   gap: 18px;
   align-items: start;
+}
+.people-layout .panel {
+  min-width: 0;
 }
 .people-layout .panel-head {
   gap: 12px;
@@ -1120,8 +1127,8 @@ footer span {
   display: flex;
   align-items: center;
   gap: 14px;
-  border-top: 1px solid #e8eef0;
-  padding: 13px 0;
+  border-bottom: 1px solid var(--color-section-divider);
+  padding: 13px 23px;
 }
 .people-row > div:first-child {
   min-width: 0;
@@ -1138,7 +1145,7 @@ footer span {
 .people-empty,
 .field-hint {
   color: #71818e;
-  font-size: 12px;
+  font-size: var(--font-size-secondary);
 }
 .people-row .people-meta {
   text-align: right;
@@ -1148,14 +1155,65 @@ footer span {
   white-space: nowrap;
 }
 .people-row.legacy {
-  background: #f7faf9;
+  background: var(--color-section-soft);
 }
 .people-empty {
-  padding: 18px 0;
+  padding: 18px 23px;
 }
 .field-hint {
   display: block;
   margin-top: 4px;
+}
+.people-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.people-actions .link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.role-group {
+  border-bottom: 1px solid var(--color-section-divider);
+}
+.role-group.legacy {
+  background: var(--color-section-soft);
+}
+.role-group .people-row {
+  border-bottom: 0;
+}
+.role-rates {
+  padding-bottom: 7px;
+}
+.role-rates .people-empty {
+  padding-top: 3px;
+  padding-bottom: 10px;
+}
+.role-rate-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 23px;
+  color: #71818e;
+  font-size: var(--font-size-secondary);
+}
+.role-rate-row strong {
+  color: #263d4c;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.role-rate-row .rate-purpose {
+  color: #16877d;
+  background: #eef7f4;
+  border-radius: 4px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+.role-rate-row .link {
+  white-space: nowrap;
 }
 @media (min-width: 1500px) {
   .content {
@@ -1267,6 +1325,12 @@ footer span {
   }
   .people-row .people-meta {
     text-align: left;
+  }
+  .role-rate-row {
+    flex-wrap: wrap;
+  }
+  .role-rate-row strong {
+    margin-left: 0;
   }
   .project-detail {
     flex-direction: column;

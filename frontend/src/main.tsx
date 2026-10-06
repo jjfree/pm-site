@@ -521,8 +521,9 @@ function TimeRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => v
 }
 
 function ProjectPeoplePanel({
-  members, roles, times, rates, onOpen, onBulkRole,
+  projectId, members, roles, times, rates, onOpen, onBulkRole,
 }: {
+  projectId: string;
   members: Row[];
   roles: Row[];
   times: Row[];
@@ -530,15 +531,15 @@ function ProjectPeoplePanel({
   onOpen: (kind: string, row?: Row) => void;
   onBulkRole: (member: Row) => void;
 }) {
-  const roster = new Map(members.map((member) => [String(member.person).toLocaleLowerCase(), member]));
+  const roster = new Set(members.map((member) => String(member.person)));
   const legacyPeople = [...new Set(times.map((entry) => String(entry.person || "")).filter(Boolean))]
-    .filter((person) => !roster.has(person.toLocaleLowerCase())).sort((a, b) => a.localeCompare(b, "zh-TW"));
-  const registeredRoles = new Map(roles.map((role) => [String(role.name).toLocaleLowerCase(), role]));
+    .filter((person) => !roster.has(person)).sort((a, b) => a.localeCompare(b, "zh-TW"));
+  const registeredRoles = new Set(roles.map((role) => String(role.name)));
   const legacyRoles = [...new Set([
     ...times.map((entry) => String(entry.role || "")),
     ...rates.map((rate) => String(rate.role || "")),
     ...members.map((member) => String(member.role || "")),
-  ].filter(Boolean))].filter((role) => !registeredRoles.has(role.toLocaleLowerCase()))
+  ].filter(Boolean))].filter((role) => !registeredRoles.has(role))
     .sort((a, b) => a.localeCompare(b, "zh-TW"));
   const hoursFor = (person: string) => times
     .filter((entry) => entry.person === person)
@@ -546,6 +547,21 @@ function ProjectPeoplePanel({
   const inferredRole = (person: string) => {
     const names = [...new Set(times.filter((entry) => entry.person === person).map((entry) => String(entry.role || "")).filter(Boolean))];
     return names.length === 1 ? names[0] : "";
+  };
+  const rateListFor = (roleName: string) => {
+    const roleRates = rates.filter((rate) => rate.role === roleName)
+      .sort((a, b) => String(a.purpose).localeCompare(String(b.purpose)) || String(b.start).localeCompare(String(a.start)));
+    return <div className="role-rates">
+      {roleRates.length ? roleRates.map((rate) => (
+        <div className="role-rate-row" key={rate.id}>
+          <span className="rate-purpose">{name(rate.purpose)}</span>
+          <span>{rate.person || "角色通用"}</span>
+          <strong>{num(rate.amount)}／{name(rate.unit)}</strong>
+          <span>{rate.start}－{rate.end || "持續有效"}</span>
+          <button className="link" onClick={() => onOpen("rates", rate)}>編輯<ChevronRight size={14} /></button>
+        </div>
+      )) : <p className="people-empty">尚無單價；成本會顯示待估，直到設定適用的成本單價。</p>}
+    </div>;
   };
   return (
     <div className="people-layout">
@@ -572,19 +588,27 @@ function ProjectPeoplePanel({
         {!members.length && !legacyPeople.length && <p className="people-empty">尚無成員。新增成員後，記錄工時時即可選用。</p>}
       </section>
       <section className="panel">
-        <div className="panel-head"><div><h3>工時角色</h3><p className="muted">角色可先建立，單價另行設定</p></div>
-          <button className="secondary" onClick={() => onOpen("roles")}><Plus size={15} />新增角色</button></div>
+        <div className="panel-head"><div><h3>角色與單價</h3><p className="muted">按角色查看成本與售價，單價可指定人員及有效期間</p></div>
+          <div className="people-actions"><a className="link" href={`/api/exports/rates?project_id=${projectId}&fmt=xlsx`}><Download size={15} />單價 Excel</a>
+            <button className="secondary" onClick={() => onOpen("roles")}><Plus size={15} />新增角色</button></div></div>
         {[...roles].sort((a, b) => String(a.name).localeCompare(String(b.name), "zh-TW")).map((role) => (
-          <div className="people-row" key={role.id}>
-            <div><strong>{role.name}</strong><span>{role.active ? "啟用" : "停用"}</span></div>
-            <div className="people-meta"><span>{rates.filter((rate) => rate.role === role.name && rate.purpose === "cost").length} 筆成本單價</span></div>
-            <button className="link" onClick={() => onOpen("roles", role)}>編輯<ChevronRight size={14} /></button>
+          <div className="role-group" key={role.id}>
+            <div className="people-row">
+              <div><strong>{role.name}</strong><span>{role.active ? "啟用" : "停用"}</span></div>
+              <button className="link" onClick={() => onOpen("rates", { role: role.name })}><Plus size={14} />新增單價</button>
+              <button className="link" onClick={() => onOpen("roles", role)}>編輯角色<ChevronRight size={14} /></button>
+            </div>
+            {rateListFor(role.name)}
           </div>
         ))}
         {legacyRoles.map((role) => (
-          <div className="people-row legacy" key={role}>
-            <div><strong>{role}</strong><span>既有工時或單價使用 · 尚未建檔</span></div>
-            <button className="link" onClick={() => onOpen("roles", { name: role, active: true })}>加入角色<ChevronRight size={14} /></button>
+          <div className="role-group legacy" key={role}>
+            <div className="people-row">
+              <div><strong>{role}</strong><span>既有工時或單價使用 · 尚未建檔</span></div>
+              <button className="link" onClick={() => onOpen("rates", { role })}><Plus size={14} />新增單價</button>
+              <button className="link" onClick={() => onOpen("roles", { name: role, active: true })}>加入角色<ChevronRight size={14} /></button>
+            </div>
+            {rateListFor(role)}
           </div>
         ))}
         {!roles.length && !legacyRoles.length && <p className="people-empty">尚無角色。先新增工時角色，再設定成本單價。</p>}
@@ -2267,7 +2291,7 @@ function App() {
                     </ChartBox>
                   </div>
                   <div className="tabs">
-                    {["members", "times", "rates", "scenarios", "payments"].map((k) => (
+                    {["members", "times", "scenarios", "payments"].map((k) => (
                       <button
                         key={k}
                         className={tab === k ? "active" : ""}
@@ -2276,9 +2300,8 @@ function App() {
                         {
                           (
                             {
-                              members: "成員與角色",
+                              members: "成員、角色與單價",
                               times: "工時紀錄",
-                              rates: "單價設定",
                               scenarios: "收入情境",
                               payments: "款項與收款",
                             } as Row
@@ -2293,7 +2316,6 @@ function App() {
                       <Plus size={15} />
                       {({
                         times: "新增工時",
-                        rates: "新增單價",
                         scenarios: "新增情境",
                         payments: "新增款項",
                       } as Row)[tab]}
@@ -2307,6 +2329,7 @@ function App() {
                     </a>}
                   </div>
                   {tab === "members" ? <ProjectPeoplePanel
+                    projectId={pid}
                     members={all.members || []}
                     roles={all.roles || []}
                     times={all.times || []}
@@ -2328,17 +2351,7 @@ function App() {
                             : all[tab] || []
                         }
                         columns={
-                          tab === "rates"
-                            ? [
-                                ["role", "角色"],
-                                ["person", "人員"],
-                                ["purpose", "用途"],
-                                ["amount", "單價"],
-                                ["unit", "單位"],
-                                ["start", "有效起日"],
-                                ["end", "迄日"],
-                              ]
-                            : tab === "scenarios"
+                          tab === "scenarios"
                               ? [
                                   ["name", "情境"],
                                   ["status", "狀態"],

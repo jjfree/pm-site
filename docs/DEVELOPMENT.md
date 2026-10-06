@@ -11,9 +11,14 @@ pnpm run build
 cd ..
 .venv\Scripts\python.exe -m pytest
 .venv\Scripts\python.exe -m ruff check app tests scripts
+.venv\Scripts\python.exe scripts/check_ui_style.py
 ```
 
 前端開發：在後端環境設定 `PM_DEV_ORIGIN=http://127.0.0.1:5173`，啟動 loopback 後端與 `pnpm run dev`。代理 `/api` 到 8765，資產需在同一個來源使用。日常操作不啟用開發伺服器。
+
+## 介面開發要求
+
+介面修改須遵循 [介面風格要求](UI_STYLE.md)：沿用根層字型、字級及既有面板／按鈕／表單樣式；新增 CSS 以元件類名限定，並檢查桌面及 1050px、720px 以下版面。`scripts/check_ui_style.py` 由 CI 執行，攔截額外字型設定與遠端樣式來源。正式建置後提交更新的 `app/static` 產物；CI 也會檢查建置產物與提交內容一致。
 
 ## 公開前檢查
 
