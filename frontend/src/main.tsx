@@ -35,6 +35,7 @@ import {
   Cell,
 } from "recharts";
 import "./styles.css";
+import { ownerLabelIndexes } from "./issueTimeline";
 
 type Row = Record<string, any>;
 const isString = (value: unknown): value is string => typeof value === "string";
@@ -447,10 +448,6 @@ const issueTimelineStatusNames: Row = {
   resolved: "已解決",
   closed: "已結案",
 };
-function sameIssueOwner(a: Row, b: Row) {
-  if (a.owner_member_id && b.owner_member_id) return a.owner_member_id === b.owner_member_id;
-  return String(a.owner || "").trim() === String(b.owner || "").trim();
-}
 function IssueTimeline({ rows }: { rows: Row[] }) {
   const dated = rows.filter((row) => row.created && row.due);
   const dates = dated.flatMap((row) => {
@@ -509,6 +506,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
             if (!events.length) events.push({
               day: startDay, event: { at: row.created, status: row.status, owner: row.owner, owner_alias: row.owner_alias },
             });
+            const ownerLabels = new Set(ownerLabelIndexes(events.map((item: Row) => item.event)));
             return <div className="timeline-row" key={row.id}>
               <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong></div>
               <div className="timeline-track" title={`${start} — ${due}`}>
@@ -517,13 +515,12 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
                   const left = (item.day - firstDay) / rangeDays * 100;
                   const width = (end - item.day) / rangeDays * 100;
                   const eventOwner = item.event.owner_alias || item.event.owner || "未指定";
-                  const ownerChanged = index === 0 || !sameIssueOwner(item.event, events[index - 1].event);
                   const eventStatus = issueTimelineStatusNames[item.event.status] || "待處理";
                   const eventDate = new Date(item.event.at).toLocaleDateString("sv-SE");
                   return <span key={`${item.day}-${index}`} className="timeline-segment"
                     style={{ left: `${left}%`, width: `${width}%`, background: issueTimelineColors[item.event.status] || issueTimelineColors.open }}
                     title={`${eventStatus} · ${eventOwner} · ${eventDate}`}>
-                    {ownerChanged && <span className="timeline-owner-label">{eventOwner}</span>}
+                    {ownerLabels.has(index) && <span className="timeline-owner-label">{eventOwner}</span>}
                   </span>;
                 })}
               </div>

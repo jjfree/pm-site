@@ -7,6 +7,7 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
 cd frontend
 pnpm install --frozen-lockfile
+pnpm test
 pnpm run build
 cd ..
 .venv\Scripts\python.exe -m pytest

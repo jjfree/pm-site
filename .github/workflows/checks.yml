@@ -23,6 +23,7 @@ jobs:
       - run: python -m ruff check app tests scripts
       - run: python scripts/check_ui_style.py
       - run: pnpm --dir frontend install --frozen-lockfile
+      - run: pnpm --dir frontend test
       - run: pnpm --dir frontend run build
       - run: test -z "$(git status --porcelain -- app/static)"
       - run: python scripts/publication_guard.py --history

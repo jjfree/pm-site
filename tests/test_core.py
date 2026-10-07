@@ -174,6 +174,30 @@ def test_issue_timeline_tracks_status_and_prioritizes_assignee_alias(client, pro
     assert [event["status"] for event in public["snapshot"]["issues"][0]["status_history"]] == ["open", "in_progress"]
 
 
+def test_gantt_shows_same_owner_once_when_free_text_is_linked(client, project):
+    member = client.post("/api/records/members", json={
+        "project_id": project["id"], "person": "林小明", "alias": "Ted",
+    }).json()
+    issue = client.post("/api/records/issues", json={
+        "project_id": project["id"], "title": "Owner link", "owner": "Ted", "due": "2025-01-20",
+    }).json()
+    linked = client.put(f"/api/records/issues/{issue['id']}", json={
+        **body(issue), "owner_member_id": member["id"],
+    })
+    assert linked.status_code == 200
+    with client.app.state.store.connect() as db:
+        db.execute("UPDATE records SET created=? WHERE id=?", ("2025-01-01T00:00:00+00:00", issue["id"]))
+        audits = db.execute("SELECT id FROM audits WHERE record_id=? ORDER BY id", (issue["id"],)).fetchall()
+        for audit, at in zip(audits, ("2025-01-01T00:00:00+00:00", "2025-01-05T00:00:00+00:00")):
+            db.execute("UPDATE audits SET at=? WHERE id=?", (at, audit["id"]))
+    history = client.get(f"/api/records/issues?project_id={project['id']}&aliases=true").json()[0]["status_history"]
+    assert [event["owner_alias"] or event["owner"] for event in history] == ["Ted", "Ted"]
+    report = client.post("/api/reports", json={"project_id": project["id"], "sections": ["issues"]}).json()
+    pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
+    texts = [shape.text for slide in pptx.slides for shape in slide.shapes if shape.has_text_frame]
+    assert texts.count("Ted") == 1
+
+
 def test_validation_and_rate_overlap(client, project):
     rate = {
         "project_id": project["id"],

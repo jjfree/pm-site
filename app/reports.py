@@ -118,9 +118,11 @@ def make_pptx(snapshot, sections):
         return box
 
     def same_issue_owner(a, b):
-        if a.get("owner_member_id") and b.get("owner_member_id"):
-            return a["owner_member_id"] == b["owner_member_id"]
-        return str(a.get("owner") or "").strip() == str(b.get("owner") or "").strip()
+        if a.get("owner_member_id") and a.get("owner_member_id") == b.get("owner_member_id"):
+            return True
+        label_a = a.get("owner_alias") or a.get("owner") or "未指定"
+        label_b = b.get("owner_alias") or b.get("owner") or "未指定"
+        return str(label_a).strip().casefold() == str(label_b).strip().casefold()
 
     def issue_timeline(rows):
         if not rows:

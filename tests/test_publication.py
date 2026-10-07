@@ -18,6 +18,8 @@ def test_guard_reads_custom_rules_without_echo():
     assert guard.check_blob("data/customer.csv", b"hello")
     assert guard.check_blob("README.md", b"Private-Acme", ["private-acme"])
     assert guard.check_blob("app/demo.py", b"synthetic values") == []
+    assert guard.check_blob("frontend/src/issueTimeline.ts", b"export const x = 1") == []
+    assert guard.check_blob("frontend/tests/issueTimeline.test.mjs", b"export const x = 1") == []
     assert guard.check_blob("app/static/assets/main.js", b"C:/Users/PrivateUser", ["PrivateUser"])
     assert guard.check_blob("app/demo.py", b"ghp_" + b"a" * 36)
 
