@@ -491,6 +491,10 @@ td {
   overflow-wrap: anywhere;
   line-height: 1.6;
 }
+.preserve-line-breaks {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 td small {
   display: block;
   margin-top: 3px;

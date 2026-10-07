@@ -7,6 +7,7 @@
 - 字型只在 `:root` 定義，使用 `--font-family-ui`：Inter、Segoe UI、Microsoft JhengHei、sans-serif。表單控制項繼承字型，不在個別元件、行內樣式或其他 CSS 檔重新指定字型。
 - 不載入遠端字型、CSS 或其他 CDN 資源。一般文字沿用根字級；輔助文字使用 `--font-size-secondary`，標題沿用既有 `h1`／`h2`／`h3` 層級。
 - 按鈕、標籤及表格欄名使用現有用語與字級，不為單一頁面另設相近的字體規格。
+- `textarea` 編輯的內容或匯入的多行文字，在列表、詳情、摘要卡及預覽等唯讀畫面須保留原有換行，沿用 `.preserve-line-breaks`；長字串需可換行。以純文字呈現內容，不用 HTML 注入處理換行。
 
 ## 元件與色彩
 

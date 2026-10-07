@@ -278,6 +278,8 @@ const schemas: Record<string, Field[]> = {
     { key: "received", label: "已收款", type: "number" },
   ],
 };
+const multilineFields = new Set(Object.values(schemas)
+  .flatMap((fields) => fields.filter((field) => field.type === "textarea").map((field) => field.key)));
 const defaults: Row = {
   projects: {
     status: "active",
@@ -390,7 +392,7 @@ function DataTable({
           {rows.map((r, i) => (
             <tr key={r.id || i}>
               {columns.map(([k]) => (
-                <td key={k}>
+                <td key={k} className={multilineFields.has(k) ? "preserve-line-breaks" : undefined}>
                   {[
                     "status",
                     "priority",
@@ -1484,7 +1486,7 @@ function ImportView({
                       />
                     </td>
                     <td>{r.row}</td>
-                    <td>
+                    <td className="preserve-line-breaks">
                       {Object.entries(r.data)
                         .filter(
                           ([k]) => !["project_id", "source_id"].includes(k),
@@ -2175,7 +2177,7 @@ function App() {
                             <span className={"mini-dot " + p.status} />
                             <div>
                               <strong>{p.name}</strong>
-                              <p>
+                              <p className="preserve-line-breaks">
                                 {p.status_reason ||
                                   `${p.open_issues} 件未結事項 · ${p.overdue} 件逾期待辦`}
                               </p>
@@ -2198,7 +2200,7 @@ function App() {
                     <div>
                       <Badge value={project.status} />
                       <h2>{project.name}</h2>
-                      <p>{project.summary || "尚未填寫摘要"}</p>
+                      <p className="preserve-line-breaks">{project.summary || "尚未填寫摘要"}</p>
                       <div className="detail-meta">
                         <span>負責人：{ownerDisplay(project) || "未設定"}{project.owner && !project.owner_member_id && "（待重新指派）"}</span>
                         <span>
@@ -2210,7 +2212,7 @@ function App() {
                         </span>
                       </div>
                       {project.status_reason && (
-                        <div className="notice">{project.status_reason}</div>
+                        <div className="notice preserve-line-breaks">{project.status_reason}</div>
                       )}
                     </div>
                     <button
