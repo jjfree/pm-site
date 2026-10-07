@@ -47,6 +47,7 @@ def make_snapshot(project, summary, issues, works, deliverables, external=False,
             "issues": [
                 {
                     **{k: i[k] for k in ["title", "kind", "status", "priority"]},
+                    "number": i.get("number", ""),
                     "due": i.get("due"),
                     "created": i.get("created", ""),
                     "status_history": [
@@ -152,7 +153,8 @@ def make_pptx(snapshot, sections):
                 legend_x += 1.1
             for index, row in enumerate(page_rows):
                 y = top + index * 0.62
-                text(s, clipped(row.get("title", ""), 25), 0.72, y, 2.0, 0.27, 10)
+                label = f"{row.get('number', '')} {row.get('title', '')}".strip()
+                text(s, clipped(label, 25), 0.72, y, 2.0, 0.27, 10)
                 if not snapshot["external"]:
                     owner = row.get("owner_alias") or row.get("owner") or "未指定"
                     text(s, clipped(owner, 18), 2.75, y, 1.45, 0.27, 9)
@@ -208,7 +210,11 @@ def make_pptx(snapshot, sections):
                                  max(0.42, segment_width * width - 0.04), 0.18, 7)
 
     def table(title, columns, rows):
-        if any(key == "owner" for _, key in columns):
+        if columns[0][1] == "number":
+            widths = [1.7, 3.6, 2.4, 1.4, 1.4, 1.4] if any(
+                key == "owner" for _, key in columns
+            ) else [1.7, 4.9, 1.8, 1.8, 1.7]
+        elif any(key == "owner" for _, key in columns):
             widths = [4.1] + [2.4 if key == "owner" else 1.8 for _, key in columns[1:]]
         else:
             widths = [5.5] + [(11.9 - 5.5) / (len(columns) - 1)] * (len(columns) - 1)
@@ -341,9 +347,9 @@ def make_pptx(snapshot, sections):
         issue_timeline(snapshot["issues"])
         table(
             "議題與決策",
-            [("事項", "title"), ("類型", "kind"), ("優先級", "priority"), ("狀態", "status")]
+            [("事項編號", "number"), ("事項", "title"), ("類型", "kind"), ("優先級", "priority"), ("狀態", "status")]
             if snapshot["external"] else
-            [("事項", "title"), ("負責人", "owner"), ("類型", "kind"), ("優先級", "priority"), ("狀態", "status")],
+            [("事項編號", "number"), ("事項", "title"), ("負責人", "owner"), ("類型", "kind"), ("優先級", "priority"), ("狀態", "status")],
             snapshot["issues"],
         )
     if "works" in sections:

@@ -18,6 +18,7 @@ import {
   Search,
   Archive,
   RefreshCw,
+  Menu,
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -37,6 +38,7 @@ import "./styles.css";
 
 type Row = Record<string, any>;
 const isString = (value: unknown): value is string => typeof value === "string";
+const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 const isSortDirection = (value: unknown): value is "asc" | "desc" => value === "asc" || value === "desc";
 const isPositiveInteger = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value > 0;
 
@@ -157,7 +159,7 @@ const colors = [
 const schemas: Record<string, Field[]> = {
   projects: [
     { key: "name", label: "專案名稱", required: true },
-    { key: "code", label: "代碼" },
+    { key: "code", label: "專案編號", required: true },
     { key: "client", label: "客戶／機關" },
     { key: "owner", label: "負責人" },
     {
@@ -477,7 +479,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
             const due = row.due;
             const owner = row.owner_alias || row.owner || "未指定";
             if (!start || !due) return <div className="timeline-row" key={row.id}>
-              <div className="timeline-item-label"><strong>{row.title}</strong><small>{owner}</small></div>
+              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>{owner}</small></div>
               <div className="timeline-track"><span className="timeline-unscheduled">{!due ? "未設定期限" : "未設定建立日"}</span></div>
             </div>;
             const startDay = dayNumber(start);
@@ -495,7 +497,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
                 return acc;
               }, []);
             return <div className="timeline-row" key={row.id}>
-              <div className="timeline-item-label"><strong>{row.title}</strong><small>{owner}</small></div>
+              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>{owner}</small></div>
               <div className="timeline-track" title={`${start} — ${due}`}>
                 {events.map((item: Row, index: number) => {
                   const end = events[index + 1]?.day ?? endDay + 1;
@@ -624,6 +626,7 @@ function TimeRecordsTable({ rows, onEdit, projectId }: { rows: Row[]; onEdit: (r
 }
 
 const issueColumns: [string, string][] = [
+  ["number", "事項編號"],
   ["title", "事項"],
   ["kind", "類型"],
   ["priority", "優先級"],
@@ -665,7 +668,7 @@ function IssueRecordsTable({ rows, onEdit, projectId }: { rows: Row[]; onEdit: (
       (!owner || (owner === "__missing__" ? !row.owner : ownerFilterKey(row) === owner)) &&
       (!dueFrom || (row.due && row.due >= dueFrom)) &&
       (!dueTo || (row.due && row.due <= dueTo)) &&
-      (!query || [row.title, ownerDisplay(row), row.description, row.action, row.decision]
+      (!query || [row.number, row.title, ownerDisplay(row), row.description, row.action, row.decision]
         .some((value) => String(value || "").toLocaleLowerCase("zh-TW").includes(query)))
     );
     return matches.sort((a, b) => {
@@ -1742,6 +1745,9 @@ function SettingsModal({
 
 function App() {
   const [showSettings, setShowSettings] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useSavedListState(
+    "pm-site:sidebar-collapsed", window.innerWidth <= 720, isBoolean,
+  );
   const requestSequence = useRef(0);
   const [page, setPage] = useState(0),
     [projects, setProjects] = useState<Row[]>([]),
@@ -1950,15 +1956,23 @@ function App() {
     img.src = u;
   }
   return (
-    <div className="shell">
+    <div className={sidebarCollapsed ? "shell sidebar-collapsed" : "shell"}>
       <aside className="sidebar">
-        <div className="brand">
-          <span className="brand-icon">
-            <FolderKanban size={23} />
-          </span>
-          <div>
-            PM Site<small>PROJECT WORKSPACE</small>
+        <div className="sidebar-top">
+          <div className="brand">
+            <span className="brand-icon">
+              <FolderKanban size={23} />
+            </span>
+            <div>
+              PM Site<small>PROJECT WORKSPACE</small>
+            </div>
           </div>
+          <button className="sidebar-toggle" type="button"
+            aria-label={sidebarCollapsed ? "展開左側選單" : "收合左側選單"}
+            title={sidebarCollapsed ? "展開選單" : "收合選單"}
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)}>
+            <Menu size={19} />
+          </button>
         </div>
         <div className="workspace-label">工作空間</div>
         <nav>
@@ -1985,11 +1999,11 @@ function App() {
           })}
         </nav>
         <div className="sidebar-bottom">
-          <button onClick={() => setShowSettings(true)}>
+          <button aria-label="本機設定" title="本機設定" onClick={() => setShowSettings(true)}>
             <Settings2 size={18} />
             本機設定
           </button>
-          <button onClick={backup}>
+          <button aria-label="備份本機資料" title="備份本機資料" onClick={backup}>
             <Archive size={18} />
             備份本機資料
           </button>
@@ -2001,6 +2015,8 @@ function App() {
           <small>資料保存在此裝置</small>
         </div>
       </aside>
+      {!sidebarCollapsed && <button className="sidebar-scrim" type="button"
+        aria-label="收合左側選單" onClick={() => setSidebarCollapsed(true)} />}
       <main>
         <header className="topbar">
           <div className="breadcrumb">

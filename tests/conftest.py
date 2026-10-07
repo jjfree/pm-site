@@ -16,6 +16,7 @@ def project(client):
         "/api/records/projects",
         json={
             "name": "Synthetic project",
+            "code": "SYN",
             "revenue": "200000",
             "budget": "90000",
             "eac": "20000",

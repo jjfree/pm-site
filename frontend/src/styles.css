@@ -77,6 +77,33 @@ h3 {
   display: flex;
   flex-direction: column;
 }
+.sidebar-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sidebar-top .brand {
+  padding: 0;
+}
+.sidebar-toggle {
+  flex: none;
+  align-self: flex-end;
+  display: grid;
+  place-items: center;
+  width: 29px;
+  height: 35px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #b7c5cd;
+}
+.sidebar-toggle:hover {
+  background: #304551;
+}
+.sidebar-scrim {
+  display: none;
+}
 .brand {
   display: flex;
   gap: 11px;
@@ -1511,5 +1538,66 @@ footer span {
   }
   .chart {
     height: 230px;
+  }
+}
+.sidebar-collapsed .sidebar {
+  width: 68px;
+  padding: 22px 10px;
+}
+.sidebar-collapsed .sidebar-top {
+  align-items: center;
+}
+.sidebar-collapsed .sidebar-toggle {
+  align-self: center;
+}
+.sidebar-collapsed .brand > div,
+.sidebar-collapsed .workspace-label,
+.sidebar-collapsed .nav-count,
+.sidebar-collapsed .local-label,
+.sidebar-collapsed .sidebar-bottom small {
+  display: none;
+}
+.sidebar-collapsed .nav-item {
+  justify-content: center;
+  padding: 14px;
+  font-size: 0;
+}
+.sidebar-collapsed .sidebar-bottom button {
+  justify-content: center;
+  font-size: 0;
+}
+.sidebar-collapsed main {
+  margin-left: 68px;
+}
+@media (max-width: 720px) {
+  .shell:not(.sidebar-collapsed) .sidebar {
+    width: 190px;
+    padding: 22px 10px;
+    z-index: 20;
+  }
+  .shell:not(.sidebar-collapsed) .brand > div,
+  .shell:not(.sidebar-collapsed) .workspace-label,
+  .shell:not(.sidebar-collapsed) .nav-count,
+  .shell:not(.sidebar-collapsed) .brand small {
+    display: block;
+  }
+  .shell:not(.sidebar-collapsed) .sidebar-bottom {
+    display: flex;
+  }
+  .shell:not(.sidebar-collapsed) .nav-item {
+    font-size: 13px;
+    justify-content: flex-start;
+    margin-top: 0;
+  }
+  .shell:not(.sidebar-collapsed) main {
+    margin-left: 68px;
+  }
+  .shell:not(.sidebar-collapsed) .sidebar-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 19;
+    border: 0;
+    background: rgb(15 31 40 / 35%);
   }
 }

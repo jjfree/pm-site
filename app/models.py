@@ -20,7 +20,7 @@ class OtherCostItem(Record):
 
 class Project(Record):
     name: str = Field(min_length=1, max_length=160)
-    code: str = Field(default="", max_length=60)
+    code: str = Field(min_length=1, max_length=60)
     client: str = Field(default="", max_length=160)
     owner: str = Field(default="", max_length=120)
     owner_member_id: str = Field(default="", max_length=32)
@@ -93,6 +93,7 @@ class TimeEntry(Record):
 
 class Issue(Record):
     project_id: str
+    number: str = Field(default="", max_length=80)
     title: str = Field(min_length=1, max_length=250)
     kind: Literal["issue", "risk", "change", "decision"] = "issue"
     owner: str = Field(default="", max_length=120)

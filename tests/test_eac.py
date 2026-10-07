@@ -44,7 +44,7 @@ def test_eac_empty_zero_negative_balance_and_validation(client, project):
 def legacy_store(path, rate=True):
     store = Store(path)
     project = Project(
-        name="Synthetic legacy", tax_basis="exclusive", hours_per_day=8, revenue=10000
+        name="Synthetic legacy", code="LEGACY", tax_basis="exclusive", hours_per_day=8, revenue=10000
     ).model_dump(mode="json")
     project.pop("eac")
     project["etc"] = "1000"
@@ -73,10 +73,17 @@ def legacy_store(path, rate=True):
 def test_migration_preserves_calculated_eac_and_backup(tmp_path):
     path = tmp_path / "data"
     project = legacy_store(path)
+    with sqlite3.connect(path / "projects.sqlite3") as db:
+        db.execute("INSERT INTO records VALUES(?,?,?,?,?,?,?)", (
+            "legacy-issue", "issues", project["id"],
+            json.dumps({"project_id": project["id"], "title": "Old issue", "status": "open"}),
+            1, "2025-01-01T00:00:00+00:00", "2025-01-01T00:00:00+00:00",
+        ))
     store = Store(path)
     migrated = store.get("projects", project["id"])
     assert migrated["eac"] == "4200.00" and "etc" not in migrated
     assert migrated["version"] == project["version"] + 1
+    assert store.get("issues", "legacy-issue")["number"] == "LEGACY-0001"
     backups = list((path / "backups").glob("backup-before-eac-*.sqlite3"))
     assert len(backups) == 1
     with sqlite3.connect(backups[0]) as db:
@@ -86,7 +93,7 @@ def test_migration_preserves_calculated_eac_and_backup(tmp_path):
             == "1000"
         )
     with store.connect() as db:
-        assert db.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert db.execute("PRAGMA user_version").fetchone()[0] == 3
         assert (
             json.loads(db.execute("SELECT payload FROM reports WHERE id='historic'").fetchone()[0])[
                 "summary"
@@ -132,7 +139,7 @@ def test_migration_rolls_back_all_projects_on_failure(tmp_path, monkeypatch):
 
 
 def test_manual_eac_is_independent_of_actual_cost():
-    project = Project(name="Synthetic", revenue="1234.56", eac="789.10", tax_basis="exclusive").model_dump(mode="json")
+    project = Project(name="Synthetic", code="SYN", revenue="1234.56", eac="789.10", tax_basis="exclusive").model_dump(mode="json")
     result = summarize(project, [], [])
     assert result["profit"] == "445.46"
 

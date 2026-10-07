@@ -85,6 +85,21 @@ def create_app(directory=None):
             raise HTTPException(422, "請檢查必填值、型別與數值範圍：" + fields) from exc
         if kind != "projects" and not store.get("projects", data["project_id"], db):
             raise HTTPException(422, "專案不存在")
+        if kind == "projects" and any(
+            row["id"] != ident and row.get("code", "").casefold() == data["code"].casefold()
+            for row in store.list("projects", db=db)
+        ):
+            raise HTTPException(409, "專案編號已存在")
+        if kind == "issues":
+            project = store.get("projects", data["project_id"], db)
+            if not project.get("code"):
+                raise HTTPException(422, "請先設定專案編號")
+            if any(
+                other["id"] != project["id"] and other.get("code", "").casefold() == project["code"].casefold()
+                for other in store.list("projects", db=db)
+            ):
+                raise HTTPException(422, "請先為專案設定不重複的專案編號")
+            data["number"] = ""
         if kind == "issues" and data["external_url"]:
             if urlparse(data["external_url"]).scheme not in {"http", "https"}:
                 raise HTTPException(422, "外部連結僅支援HTTP／HTTPS")
@@ -340,7 +355,14 @@ def create_app(directory=None):
                     key = "name" if kind == "roles" else "person"
                     if old[key] != data[key]:
                         raise HTTPException(422, "已建檔的角色或成員不可更名；請新增資料並停用舊項目")
+                if old and kind == "projects" and old.get("code") != data["code"]:
+                    if db.execute(
+                        "SELECT 1 FROM issue_counters WHERE project_id=?", (ident,)
+                    ).fetchone():
+                        raise HTTPException(422, "已有事項編號，專案編號不可更改")
                 saved = store.write(kind, data, ident, version, db)
+                if kind == "projects":
+                    store.number_existing_issues(ident, db)
                 return saved
             except KeyError as exc:
                 raise HTTPException(404, "紀錄不存在") from exc

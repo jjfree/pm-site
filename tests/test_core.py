@@ -6,6 +6,7 @@ from zipfile import ZipFile
 from openpyxl import load_workbook
 from pptx import Presentation
 from app.analytics import evaluate_scenario, summarize
+from app.db import Store
 from app.models import Project, Rate, Scenario, TimeEntry
 from app.reports import export_table, make_pptx, make_snapshot
 from conftest import body
@@ -51,6 +52,86 @@ def test_crud_version_and_relations(client, project):
     assert client.delete(f"/api/records/projects/{pid}?version=2").status_code == 409
     assert client.delete(f"/api/records/issues/{issue['id']}?version=1").status_code == 200
     assert client.delete(f"/api/records/projects/{pid}?version=2").status_code == 200
+
+
+def test_project_code_required_and_issue_numbers_are_stable(client, project):
+    pid = project["id"]
+    assert client.post("/api/records/projects", json={
+        "name": "Missing code", "tax_basis": "exclusive",
+    }).status_code == 422
+    assert client.post("/api/records/projects", json={
+        "name": "Duplicate code", "code": "syn", "tax_basis": "exclusive",
+    }).status_code == 409
+    first = client.post("/api/records/issues", json={
+        "project_id": pid, "title": "First", "number": "CUSTOM-9999",
+    }).json()
+    second = client.post("/api/records/issues", json={
+        "project_id": pid, "title": "Second",
+    }).json()
+    assert (first["number"], second["number"]) == ("SYN-0001", "SYN-0002")
+    changed = client.put(f"/api/records/issues/{second['id']}", json={
+        **body(second), "number": "CUSTOM-0001", "status": "in_progress",
+    }).json()
+    assert changed["number"] == "SYN-0002"
+    assert client.delete(f"/api/records/issues/{first['id']}?version={first['version']}").status_code == 200
+    third = client.post("/api/records/issues", json={
+        "project_id": pid, "title": "Third",
+    }).json()
+    assert third["number"] == "SYN-0003"
+    assert client.put(f"/api/records/projects/{pid}", json={
+        **body(project), "code": "RENAMED",
+    }).status_code == 422
+    report = client.post("/api/reports", json={"project_id": pid, "sections": ["issues"]}).json()
+    assert [row["number"] for row in report["snapshot"]["issues"]] == ["SYN-0002", "SYN-0003"]
+    pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
+    tables = [shape.table for slide in pptx.slides for shape in slide.shapes if shape.has_table]
+    assert tables[0].cell(0, 0).text == "事項編號"
+    assert [tables[0].cell(row, 0).text for row in (1, 2)] == ["SYN-0002", "SYN-0003"]
+    public = client.post("/api/reports", json={
+        "project_id": pid, "external": True, "sections": ["issues"],
+    }).json()
+    assert [row["number"] for row in public["snapshot"]["issues"]] == ["SYN-0002", "SYN-0003"]
+
+
+def test_legacy_project_issues_receive_numbers_when_code_is_set(client):
+    store = client.app.state.store
+    with store.connect() as db:
+        legacy = store.write("projects", {"name": "Legacy", "code": "", "tax_basis": "exclusive"}, db=db)
+        for index, title in enumerate(("Old first", "Old second"), 1):
+            db.execute("INSERT INTO records VALUES(?,?,?,?,?,?,?)", (
+                f"legacy-{index}", "issues", legacy["id"],
+                json.dumps({"project_id": legacy["id"], "title": title, "status": "open"}),
+                1, f"2025-01-0{index}T00:00:00+00:00", f"2025-01-0{index}T00:00:00+00:00",
+            ))
+    assert client.post("/api/records/issues", json={
+        "project_id": legacy["id"], "title": "New",
+    }).status_code == 422
+    updated = client.put(f"/api/records/projects/{legacy['id']}", json={
+        **body(legacy), "code": "OLD",
+    })
+    assert updated.status_code == 200
+    issues = client.get(f"/api/records/issues?project_id={legacy['id']}").json()
+    assert [issue["number"] for issue in issues] == ["OLD-0001", "OLD-0002"]
+    assert client.post("/api/records/issues", json={
+        "project_id": legacy["id"], "title": "New",
+    }).json()["number"] == "OLD-0003"
+
+
+def test_issue_number_migration_backfills_and_backs_up(tmp_path):
+    path = tmp_path / "legacy"
+    store = Store(path)
+    project = store.write("projects", {"name": "Legacy", "code": "OLD", "tax_basis": "exclusive"})
+    with store.connect() as db:
+        db.execute("INSERT INTO records VALUES(?,?,?,?,?,?,?)", (
+            "legacy-issue", "issues", project["id"],
+            json.dumps({"project_id": project["id"], "title": "Old issue", "status": "open"}),
+            1, "2025-01-01T00:00:00+00:00", "2025-01-01T00:00:00+00:00",
+        ))
+        db.execute("PRAGMA user_version=2")
+    migrated = Store(path)
+    assert migrated.get("issues", "legacy-issue")["number"] == "OLD-0001"
+    assert len(list((path / "backups").glob("backup-before-issue-numbers-*.sqlite3"))) == 1
+    assert Store(path).get("issues", "legacy-issue")["number"] == "OLD-0001"
 
 
 def test_issue_timeline_tracks_status_and_prioritizes_assignee_alias(client, project):
@@ -105,11 +186,11 @@ def test_validation_and_rate_overlap(client, project):
         == 200
     )
     assert client.post("/api/records/rates", json={**rate, "amount": "-1"}).status_code == 422
-    assert client.post("/api/records/projects", json={"name": "Missing basis"}).status_code == 422
-    assert client.post("/api/records/projects", json={"name": "Unknown basis", "tax_basis": "unknown"}).status_code == 422
+    assert client.post("/api/records/projects", json={"name": "Missing basis", "code": "VALIDATION"}).status_code == 422
+    assert client.post("/api/records/projects", json={"name": "Unknown basis", "code": "VALIDATION", "tax_basis": "unknown"}).status_code == 422
     assert (
         client.post(
-            "/api/records/projects", json={"name": "X", "tax_basis": "exclusive", "start": "2025-02-01", "end": "2025-01-01"}
+            "/api/records/projects", json={"name": "X", "code": "VALIDATION", "tax_basis": "exclusive", "start": "2025-02-01", "end": "2025-01-01"}
         ).status_code
         == 422
     )
@@ -148,7 +229,7 @@ def test_time_role_edit_preserves_other_entries_and_cost(client, project):
         ).json()
         for person, role in [("Member-A", ""), ("Member-A", "Old"), ("Member-B", "")]
     ]
-    other_project = client.post("/api/records/projects", json={"name": "Other project", "tax_basis": "exclusive"}).json()
+    other_project = client.post("/api/records/projects", json={"name": "Other project", "code": "OTHER", "tax_basis": "exclusive"}).json()
     outside = client.post(
         "/api/records/times",
         json={"project_id": other_project["id"], "person": "Member-A", "date": "2025-01-01", "hours": 8},
@@ -196,7 +277,7 @@ def test_project_members_and_roles_are_unique_and_do_not_rewrite_history(client,
     assert client.delete(f"/api/records/members/{member['id']}?version=2").status_code == 409
     assert client.delete(f"/api/records/roles/{role['id']}?version=1").status_code == 409
     assert client.put(f"/api/records/roles/{role['id']}", json={**body(role), "active": False}).json()["active"] is False
-    other = client.post("/api/records/projects", json={"name": "Other", "tax_basis": "exclusive"}).json()
+    other = client.post("/api/records/projects", json={"name": "Other", "code": "OTHER", "tax_basis": "exclusive"}).json()
     assert client.post("/api/records/roles", json={"project_id": other["id"], "name": "Engineer"}).status_code == 200
     assert client.post("/api/records/members", json={"project_id": other["id"], "person": "Member-A"}).status_code == 200
 
@@ -231,7 +312,7 @@ def test_owner_assignments_link_to_project_members_and_preserve_legacy_values(cl
     }).json()
     assert updated_project["owner"] == "Lin"
 
-    other = client.post("/api/records/projects", json={"name": "Other", "tax_basis": "exclusive"}).json()
+    other = client.post("/api/records/projects", json={"name": "Other", "code": "OTHER", "tax_basis": "exclusive"}).json()
     assert client.post("/api/records/issues", json={
         "project_id": other["id"], "title": "Cross project", "owner_member_id": member["id"],
     }).status_code == 422
@@ -252,7 +333,7 @@ def test_aliases_appear_in_records_exports_and_internal_report_only(client, proj
     member = client.post("/api/records/members", json={
         "project_id": pid, "person": "Lin", "alias": "Alex", "role": "PM",
     }).json()
-    other = client.post("/api/records/projects", json={"name": "Other", "tax_basis": "exclusive"}).json()
+    other = client.post("/api/records/projects", json={"name": "Other", "code": "OTHER", "tax_basis": "exclusive"}).json()
     client.post("/api/records/members", json={
         "project_id": other["id"], "person": "Lin", "alias": "Different",
     })
@@ -330,6 +411,7 @@ def fixtures():
     p = model(
         Project,
         name="Synthetic",
+        code="SYN",
         hours_per_day=8,
         revenue=200000,
         eac=27200,

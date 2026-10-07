@@ -1,11 +1,12 @@
 import json
 import sqlite3
+from collections import Counter
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def now():
@@ -36,10 +37,52 @@ class Store:
                 id TEXT PRIMARY KEY, payload TEXT NOT NULL);
               CREATE TABLE IF NOT EXISTS reports (
                 id TEXT PRIMARY KEY, payload TEXT NOT NULL, at TEXT NOT NULL);
+              CREATE TABLE IF NOT EXISTS issue_counters (
+                project_id TEXT PRIMARY KEY, next_value INTEGER NOT NULL);
             """)
             if version < 2:
                 self.migrate_eac(db)
+            if version < 3:
+                self.migrate_issue_numbers(db, backed_up=version < 2)
             db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+
+    def migrate_issue_numbers(self, db, backed_up=False):
+        projects = self.list("projects", db=db)
+        codes = Counter(p.get("code", "").casefold() for p in projects if p.get("code"))
+        eligible = [p for p in projects if p.get("code") and codes[p["code"].casefold()] == 1]
+        if not backed_up and any(self.list("issues", p["id"], db) for p in eligible):
+            archive = self.directory / "backups"
+            archive.mkdir(exist_ok=True)
+            target = archive / ("backup-before-issue-numbers-" + uuid4().hex + ".sqlite3")
+            with sqlite3.connect(target) as backup:
+                db.backup(backup)
+                if backup.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise ValueError("事項編號遷移前備份完整性檢查失敗")
+        for project in eligible:
+            self.number_existing_issues(project["id"], db)
+
+    def allocate_issue_number(self, project_id, db):
+        project = self.get("projects", project_id, db)
+        code = project.get("code", "") if project else ""
+        if not code:
+            raise ValueError("請先設定專案編號")
+        row = db.execute(
+            "SELECT next_value FROM issue_counters WHERE project_id=?", (project_id,)
+        ).fetchone()
+        sequence = row["next_value"] if row else 1
+        db.execute(
+            "INSERT INTO issue_counters(project_id,next_value) VALUES(?,?) "
+            "ON CONFLICT(project_id) DO UPDATE SET next_value=excluded.next_value",
+            (project_id, sequence + 1),
+        )
+        return f"{code}-{sequence:04d}"
+
+    def number_existing_issues(self, project_id, db):
+        for issue in self.list("issues", project_id, db):
+            if not issue.get("number"):
+                payload = {key: value for key, value in issue.items()
+                           if key not in {"id", "version", "created", "updated"}}
+                self.write("issues", payload, issue["id"], issue["version"], db)
 
     def migrate_eac(self, db):
         from .analytics import amount, money, summarize
@@ -118,6 +161,11 @@ class Store:
             raise KeyError(ident)
         if old and expected != old["version"]:
             raise ValueError("資料已更新，請重新整理後再編輯")
+        payload = dict(payload)
+        if kind == "issues":
+            payload["number"] = old.get("number") if old and old.get("number") else self.allocate_issue_number(
+                payload["project_id"], db
+            )
         ident = ident or uuid4().hex
         stamp, body = now(), json.dumps(payload, ensure_ascii=False)
         version = old["version"] + 1 if old else 1
