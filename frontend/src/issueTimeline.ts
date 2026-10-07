@@ -14,5 +14,5 @@ export function sameIssueOwner(a: IssueOwner, b: IssueOwner) {
 
 export function ownerLabelIndexes(events: IssueOwner[]) {
   return events.flatMap((event, index) =>
-    index === 0 || !sameIssueOwner(event, events[index - 1]) ? [index] : []);
+    index === events.length - 1 || !sameIssueOwner(event, events[index + 1]) ? [index] : []);
 }

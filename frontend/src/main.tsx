@@ -469,7 +469,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
   return (
     <section className="panel issue-timeline-panel">
       <div className="panel-head">
-        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；負責人顯示在指派當日起的彩色橫條內</span></div>
+        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；負責人顯示在其負責期間最右側的彩色橫條，換人時分別標示</span></div>
       </div>
       <div className="timeline-legend">
         {Object.keys(issueTimelineColors).map((status) => <span key={status}>

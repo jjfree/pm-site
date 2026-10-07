@@ -12,19 +12,21 @@ const { ownerLabelIndexes } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
 );
 
-test("free-text and linked records with the same visible owner get one label", () => {
+test("unchanged owner appears once in the latest right-hand segment", () => {
   const events = [
     { owner: "Ted" },
     { owner: "張小明", owner_member_id: "member-1", owner_alias: "Ted" },
     { owner: "張小明", owner_member_id: "member-1", owner_alias: "Ted" },
   ];
-  assert.deepEqual(ownerLabelIndexes(events), [0]);
+  assert.deepEqual(ownerLabelIndexes(events), [2]);
 });
 
-test("a visible owner change gets a new label", () => {
+test("each changed owner appears in the rightmost segment of that assignment", () => {
   const events = [
     { owner: "Rainer" },
+    { owner: "Rainer" },
+    { owner: "張小明", owner_member_id: "member-1", owner_alias: "Ted" },
     { owner: "張小明", owner_member_id: "member-1", owner_alias: "Ted" },
   ];
-  assert.deepEqual(ownerLabelIndexes(events), [0, 1]);
+  assert.deepEqual(ownerLabelIndexes(events), [1, 3]);
 });

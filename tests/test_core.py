@@ -5,6 +5,7 @@ from zipfile import ZipFile
 
 from openpyxl import load_workbook
 from pptx import Presentation
+from pptx.util import Inches
 from app.analytics import evaluate_scenario, summarize
 from app.db import Store
 from app.models import Project, Rate, Scenario, TimeEntry
@@ -196,6 +197,9 @@ def test_gantt_shows_same_owner_once_when_free_text_is_linked(client, project):
     pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
     texts = [shape.text for slide in pptx.slides for shape in slide.shapes if shape.has_text_frame]
     assert texts.count("Ted") == 1
+    owner_badge = next(shape for slide in pptx.slides for shape in slide.shapes
+                       if shape.has_text_frame and shape.text == "Ted")
+    assert abs(owner_badge.left - Inches(4.35 + 4 / 20 * 8.15 + 0.02)) < Inches(0.05)
 
 
 def test_validation_and_rate_overlap(client, project):

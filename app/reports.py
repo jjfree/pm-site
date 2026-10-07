@@ -195,6 +195,12 @@ def make_pptx(snapshot, sections):
                         collapsed[-1] = (event_day, event)
                     else:
                         collapsed.append((event_day, event))
+                collapsed = [item for item in collapsed if item[0] <= row_end]
+                if not collapsed:
+                    collapsed = [(row_start, {"status": row.get("status", "open"),
+                                               "owner": row.get("owner", ""),
+                                               "owner_alias": row.get("owner_alias", ""),
+                                               "owner_member_id": row.get("owner_member_id", "")})]
                 for segment_index, (event_day, event) in enumerate(collapsed):
                     next_day = collapsed[segment_index + 1][0] if segment_index + 1 < len(collapsed) else row_end + timedelta(days=1)
                     segment_end = min(row_end + timedelta(days=1), next_day)
@@ -210,10 +216,10 @@ def make_pptx(snapshot, sections):
                     bar.fill.solid()
                     bar.fill.fore_color.rgb = colors.get(event.get("status"), colors["open"])
                     bar.line.fill.background()
-                    owner_changed = segment_index == 0 or not same_issue_owner(
-                        event, collapsed[segment_index - 1][1]
+                    owner_run_end = segment_index == len(collapsed) - 1 or not same_issue_owner(
+                        event, collapsed[segment_index + 1][1]
                     )
-                    if not snapshot["external"] and owner_changed and segment_width * width >= 0.28:
+                    if not snapshot["external"] and owner_run_end and segment_width * width >= 0.28:
                         person = event.get("owner_alias") or event.get("owner") or ""
                         if person:
                             badge_width = min(segment_width * width - 0.04, max(0.24, len(person) * 0.09 + 0.12))
