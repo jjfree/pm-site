@@ -117,6 +117,11 @@ def make_pptx(snapshot, sections):
         p.font.size, p.font.name, p.font.color.rgb = Pt(size), "Microsoft JhengHei", color
         return box
 
+    def same_issue_owner(a, b):
+        if a.get("owner_member_id") and b.get("owner_member_id"):
+            return a["owner_member_id"] == b["owner_member_id"]
+        return str(a.get("owner") or "").strip() == str(b.get("owner") or "").strip()
+
     def issue_timeline(rows):
         if not rows:
             return
@@ -203,7 +208,17 @@ def make_pptx(snapshot, sections):
                     bar.fill.solid()
                     bar.fill.fore_color.rgb = colors.get(event.get("status"), colors["open"])
                     bar.line.fill.background()
-                    if not snapshot["external"] and segment_width * width >= 0.48:
+                    owner_changed = segment_index == 0 or not same_issue_owner(
+                        event, collapsed[segment_index - 1][1]
+                    )
+                    later_owner_change = any(
+                        not same_issue_owner(event, later_event)
+                        for _, later_event in collapsed[segment_index + 1:]
+                    )
+                    show_historical_owner = owner_changed and (
+                        not same_issue_owner(event, row) or later_owner_change
+                    )
+                    if not snapshot["external"] and show_historical_owner and segment_width * width >= 0.48:
                         person = event.get("owner_alias") or event.get("owner") or ""
                         if person:
                             text(s, clipped(person, 12), x + offset * width + 0.02, y + 0.26,

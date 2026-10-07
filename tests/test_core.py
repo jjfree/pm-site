@@ -147,11 +147,15 @@ def test_issue_timeline_tracks_status_and_prioritizes_assignee_alias(client, pro
         **body(issue), "status": "in_progress",
     })
     assert updated.status_code == 200
+    renamed = client.put(f"/api/records/members/{member['id']}", json={
+        **body(member), "alias": "Alex-New",
+    })
+    assert renamed.status_code == 200
     timeline_row = next(row for row in client.get(
         f"/api/records/issues?project_id={pid}&aliases=true"
     ).json() if row["id"] == issue["id"])
     assert [event["status"] for event in timeline_row["status_history"]] == ["open", "in_progress"]
-    assert all(event["owner_alias"] == "Alex" for event in timeline_row["status_history"])
+    assert all(event["owner_alias"] == "Alex-New" for event in timeline_row["status_history"])
 
     report = client.post("/api/reports", json={"project_id": pid, "sections": ["issues"]}).json()
     saved_issue = next(row for row in report["snapshot"]["issues"] if row["id"] == issue["id"])
@@ -159,13 +163,14 @@ def test_issue_timeline_tracks_status_and_prioritizes_assignee_alias(client, pro
     pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
     texts = [shape.text for slide in pptx.slides for shape in slide.shapes if shape.has_text_frame]
     assert "事項追蹤甘特圖" in texts
-    assert "Alex" in texts
+    assert texts.count("Alex-New") == 1
+    assert "Alex" not in texts
     assert "林小明" not in texts
     public = client.post("/api/reports", json={
         "project_id": pid, "external": True, "sections": ["issues"],
     }).json()
     serialized = json.dumps(public["snapshot"], ensure_ascii=False)
-    assert "Alex" not in serialized and "林小明" not in serialized
+    assert "Alex-New" not in serialized and "林小明" not in serialized
     assert [event["status"] for event in public["snapshot"]["issues"][0]["status_history"]] == ["open", "in_progress"]
 
 

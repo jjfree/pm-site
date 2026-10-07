@@ -447,6 +447,10 @@ const issueTimelineStatusNames: Row = {
   resolved: "已解決",
   closed: "已結案",
 };
+function sameIssueOwner(a: Row, b: Row) {
+  if (a.owner_member_id && b.owner_member_id) return a.owner_member_id === b.owner_member_id;
+  return String(a.owner || "").trim() === String(b.owner || "").trim();
+}
 function IssueTimeline({ rows }: { rows: Row[] }) {
   const dated = rows.filter((row) => row.created && row.due);
   const dates = dated.flatMap((row) => {
@@ -468,7 +472,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
   return (
     <section className="panel issue-timeline-panel">
       <div className="panel-head">
-        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；共用日期刻度，建立日到期限（含當日）按狀態變更時間分段</span></div>
+        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；左側顯示目前負責人，橫條按狀態變更時間分段並標示歷次負責人</span></div>
       </div>
       <div className="timeline-legend">
         {Object.keys(issueTimelineColors).map((status) => <span key={status}>
@@ -512,13 +516,18 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
                   const end = Math.min(events[index + 1]?.day ?? endDay + 1, endDay + 1);
                   const left = (item.day - firstDay) / rangeDays * 100;
                   const width = (end - item.day) / rangeDays * 100;
-                  const eventOwner = item.event.owner_alias || item.event.owner || owner;
+                  const eventOwner = item.event.owner_alias || item.event.owner || "未指定";
+                  const ownerChanged = index === 0 || !sameIssueOwner(item.event, events[index - 1].event);
+                  const hasLaterOwnerChange = events.slice(index + 1).some((next: Row) =>
+                    !sameIssueOwner(next.event, item.event));
+                  const showHistoricalOwner = ownerChanged &&
+                    (!sameIssueOwner(item.event, row) || hasLaterOwnerChange);
                   const eventStatus = issueTimelineStatusNames[item.event.status] || "待處理";
                   const eventDate = new Date(item.event.at).toLocaleDateString("sv-SE");
                   return <span key={`${item.day}-${index}`} className="timeline-segment"
                     style={{ left: `${left}%`, width: `${width}%`, background: issueTimelineColors[item.event.status] || issueTimelineColors.open }}
                     title={`${eventStatus} · ${eventOwner} · ${eventDate}`}>
-                    {eventOwner}
+                    {showHistoricalOwner ? eventOwner : ""}
                   </span>;
                 })}
               </div>
