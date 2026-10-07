@@ -517,9 +517,11 @@ const issueColumns: [string, string][] = [
   ["action", "處置行動"],
 ];
 
+const issueStatuses = ["open", "in_progress", "resolved", "closed"];
+
 function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => void }) {
   const [search, setSearch] = useState("");
-  const [status, setStatus] = useState("");
+  const [statuses, setStatuses] = useState<string[]>(issueStatuses);
   const [kind, setKind] = useState("");
   const [priority, setPriority] = useState("");
   const [owner, setOwner] = useState("");
@@ -538,7 +540,7 @@ function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => 
     const priorityOrder: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
     const statusOrder: Record<string, number> = { open: 0, in_progress: 1, resolved: 2, closed: 3 };
     const matches = rows.filter((row) =>
-      (!status || row.status === status) &&
+      statuses.includes(row.status) &&
       (!kind || row.kind === kind) &&
       (!priority || row.priority === priority) &&
       (!owner || (owner === "__missing__" ? !row.owner : ownerFilterKey(row) === owner)) &&
@@ -563,7 +565,7 @@ function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => 
       if (result) return sortDirection === "asc" ? result : -result;
       return String(a.id || "").localeCompare(String(b.id || ""));
     });
-  }, [rows, search, status, kind, priority, owner, dueFrom, dueTo, sortKey, sortDirection]);
+  }, [rows, search, statuses, kind, priority, owner, dueFrom, dueTo, sortKey, sortDirection]);
   const sort = (key: string) => {
     if (key === sortKey) setSortDirection(sortDirection === "asc" ? "desc" : "asc");
     else {
@@ -572,8 +574,13 @@ function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => 
     }
   };
   const clearFilters = () => {
-    setSearch(""); setStatus(""); setKind(""); setPriority("");
+    setSearch(""); setStatuses(issueStatuses); setKind(""); setPriority("");
     setOwner(""); setDueFrom(""); setDueTo("");
+  };
+  const toggleStatus = (value: string) => {
+    setStatuses((selected) => selected.includes(value)
+      ? selected.filter((statusValue) => statusValue !== value)
+      : [...selected, value]);
   };
   return (
     <section className="panel">
@@ -581,10 +588,15 @@ function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => 
         <label className="issue-search">關鍵字
           <input type="search" placeholder="搜尋標題、負責人或內容" value={search} onChange={(e) => setSearch(e.target.value)} />
         </label>
-        <label>狀態<select value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">全部狀態</option>
-          {["open", "in_progress", "resolved", "closed"].map((value) => <option key={value} value={value}>{name(value)}</option>)}
-        </select></label>
+        <fieldset className="issue-status-filter">
+          <legend>狀態</legend>
+          <div className="issue-status-options">
+            {issueStatuses.map((value) => <label key={value}>
+              <input type="checkbox" checked={statuses.includes(value)} onChange={() => toggleStatus(value)} />
+              {name(value)}
+            </label>)}
+          </div>
+        </fieldset>
         <label>類型<select value={kind} onChange={(e) => setKind(e.target.value)}>
           <option value="">全部類型</option>
           {["issue", "risk", "change", "decision"].map((value) => <option key={value} value={value}>{name(value)}</option>)}

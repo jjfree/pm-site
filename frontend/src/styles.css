@@ -417,6 +417,31 @@ th {
 .issue-filters .issue-search {
   grid-column: span 2;
 }
+.issue-status-filter {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.issue-status-filter legend {
+  margin-bottom: 5px;
+  font-size: 10px;
+  color: #8899a4;
+}
+.issue-status-options {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 30px;
+}
+.issue-status-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  color: #35505f;
+}
 .issue-results {
   padding: 0 20px 14px;
   color: #8899a4;
