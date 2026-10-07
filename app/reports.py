@@ -169,7 +169,7 @@ def make_pptx(snapshot, sections):
                 row_span = max(1, (row_end - row_start).days + 1)
                 x = left + max(0, (row_start - start_day).days) / span * chart_width
                 width = min(chart_width - (x - left), row_span / span * chart_width)
-                track = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y + 0.02), Inches(max(0.08, width)), Inches(0.22))
+                track = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y + 0.02), Inches(width), Inches(0.22))
                 track.fill.solid()
                 track.fill.fore_color.rgb = RGBColor(235, 240, 242)
                 track.line.fill.background()
@@ -198,7 +198,7 @@ def make_pptx(snapshot, sections):
                     bar = s.shapes.add_shape(
                         MSO_SHAPE.RECTANGLE,
                         Inches(x + offset * width), Inches(y + 0.02),
-                        Inches(max(0.015, segment_width * width)), Inches(0.22),
+                        Inches(segment_width * width), Inches(0.22),
                     )
                     bar.fill.solid()
                     bar.fill.fore_color.rgb = colors.get(event.get("status"), colors["open"])

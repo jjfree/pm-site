@@ -449,20 +449,26 @@ const issueTimelineStatusNames: Row = {
 };
 function IssueTimeline({ rows }: { rows: Row[] }) {
   const dated = rows.filter((row) => row.created && row.due);
-  const dates = dated.flatMap((row) => [row.created.slice(0, 10), row.due]);
+  const dates = dated.flatMap((row) => {
+    const start = row.created.slice(0, 10);
+    return [start, row.due > start ? row.due : start];
+  });
   if (!rows.length) return null;
   const low = dates.length ? dates.reduce((a, b) => a < b ? a : b) : "";
   const high = dates.length ? dates.reduce((a, b) => a > b ? a : b) : "";
   const dayNumber = (value: string) => Math.floor(Date.parse(`${value}T00:00:00Z`) / 86400000);
-  const rangeDays = low ? Math.max(1, dayNumber(high) - dayNumber(low) + 1) : 1;
-  const ticks = low ? [0, 0.25, 0.5, 0.75, 1].map((fraction) => ({
-    label: new Date((dayNumber(low) + Math.round((rangeDays - 1) * fraction)) * 86400000).toISOString().slice(0, 10),
-    position: `${fraction * 100}%`,
+  const firstDay = low ? dayNumber(low) : 0;
+  const rangeDays = low ? Math.max(1, dayNumber(high) - firstDay + 1) : 1;
+  const ticks = low ? [...new Set([0, 0.25, 0.5, 0.75, 1].map(
+    (fraction) => Math.round(rangeDays * fraction),
+  ))].map((offset) => ({
+    label: new Date((firstDay + offset) * 86400000).toISOString().slice(0, 10),
+    position: `${offset / rangeDays * 100}%`,
   })) : [];
   return (
     <section className="panel issue-timeline-panel">
       <div className="panel-head">
-        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；建立日到期限按狀態變更時間分段</span></div>
+        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；共用日期刻度，建立日到期限（含當日）按狀態變更時間分段</span></div>
       </div>
       <div className="timeline-legend">
         {Object.keys(issueTimelineColors).map((status) => <span key={status}>
@@ -484,25 +490,28 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
             </div>;
             const startDay = dayNumber(start);
             const endDay = Math.max(startDay, dayNumber(due));
-            const total = Math.max(1, endDay - startDay + 1);
             const history = row.status_history?.length
               ? row.status_history
               : [{ at: row.created, status: row.status, owner: row.owner, owner_alias: row.owner_alias }];
             const events = history.map((event: Row, index: number) => ({
               day: Math.max(startDay, dayNumber(String(event.at || row.created).slice(0, 10))), event, index,
-            })).sort((a: Row, b: Row) => a.day - b.day || a.index - b.index)
+            })).filter((item: Row) => item.day <= endDay)
+              .sort((a: Row, b: Row) => a.day - b.day || a.index - b.index)
               .reduce((acc: Row[], current: Row) => {
                 if (acc.length && acc[acc.length - 1].day === current.day) acc[acc.length - 1] = current;
                 else acc.push(current);
                 return acc;
               }, []);
+            if (!events.length) events.push({
+              day: startDay, event: { at: row.created, status: row.status, owner: row.owner, owner_alias: row.owner_alias },
+            });
             return <div className="timeline-row" key={row.id}>
               <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>{owner}</small></div>
               <div className="timeline-track" title={`${start} — ${due}`}>
                 {events.map((item: Row, index: number) => {
-                  const end = events[index + 1]?.day ?? endDay + 1;
-                  const left = (item.day - startDay) / total * 100;
-                  const width = Math.max((end - item.day) / total * 100, 0);
+                  const end = Math.min(events[index + 1]?.day ?? endDay + 1, endDay + 1);
+                  const left = (item.day - firstDay) / rangeDays * 100;
+                  const width = (end - item.day) / rangeDays * 100;
                   const eventOwner = item.event.owner_alias || item.event.owner || owner;
                   const eventStatus = issueTimelineStatusNames[item.event.status] || "待處理";
                   const eventDate = new Date(item.event.at).toLocaleDateString("sv-SE");
