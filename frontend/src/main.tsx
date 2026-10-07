@@ -36,6 +36,28 @@ import {
 import "./styles.css";
 
 type Row = Record<string, any>;
+const isString = (value: unknown): value is string => typeof value === "string";
+const isSortDirection = (value: unknown): value is "asc" | "desc" => value === "asc" || value === "desc";
+const isPositiveInteger = (value: unknown): value is number => typeof value === "number" && Number.isInteger(value) && value > 0;
+
+function useSavedListState<T>(key: string, defaultValue: T, isValid: (value: unknown) => value is T) {
+  const [value, setValue] = useState<T>(() => {
+    try {
+      const saved = window.localStorage.getItem(key);
+      if (saved !== null) {
+        const parsed: unknown = JSON.parse(saved);
+        if (isValid(parsed)) return parsed;
+      }
+    } catch { /* Storage may be unavailable or contain stale data. */ }
+    return defaultValue;
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(key, JSON.stringify(value)); }
+    catch { /* Keep the current page usable when storage is unavailable. */ }
+  }, [key, value]);
+  return [value, setValue] as const;
+}
+
 type Field = {
   key: string;
   label: string;
@@ -418,19 +440,22 @@ const timeColumns: [string, string][] = [
   ["content", "工作內容"],
 ];
 
-function TimeRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => void }) {
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [person, setPerson] = useState("");
-  const [role, setRole] = useState("");
-  const [category, setCategory] = useState("");
-  const [minHours, setMinHours] = useState("");
-  const [maxHours, setMaxHours] = useState("");
-  const [content, setContent] = useState("");
-  const [sortKey, setSortKey] = useState("date");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+function TimeRecordsTable({ rows, onEdit, projectId }: { rows: Row[]; onEdit: (r: Row) => void; projectId: string }) {
+  const savedKey = (field: string) => `pm-site:list:times:${projectId}:${field}`;
+  const [dateFrom, setDateFrom] = useSavedListState(savedKey("dateFrom"), "", isString);
+  const [dateTo, setDateTo] = useSavedListState(savedKey("dateTo"), "", isString);
+  const [person, setPerson] = useSavedListState(savedKey("person"), "", isString);
+  const [role, setRole] = useSavedListState(savedKey("role"), "", isString);
+  const [category, setCategory] = useSavedListState(savedKey("category"), "", isString);
+  const [minHours, setMinHours] = useSavedListState(savedKey("minHours"), "", isString);
+  const [maxHours, setMaxHours] = useSavedListState(savedKey("maxHours"), "", isString);
+  const [content, setContent] = useSavedListState(savedKey("content"), "", isString);
+  const [sortKey, setSortKey] = useSavedListState(savedKey("sortKey"), "date", (value): value is string =>
+    isString(value) && timeColumns.some(([key]) => key === value));
+  const [sortDirection, setSortDirection] = useSavedListState(savedKey("sortDirection"), "desc" as "asc" | "desc", isSortDirection);
+  const [page, setPage] = useSavedListState(savedKey("page"), 1, isPositiveInteger);
+  const [pageSize, setPageSize] = useSavedListState(savedKey("pageSize"), 20, (value): value is number =>
+    value === 20 || value === 50 || value === 100);
   const options = (key: string) => [...new Set(rows.map((row) => String(row[key] || "")))].filter(Boolean).sort((a, b) => a.localeCompare(b, "zh-TW"));
   const filtered = useMemo(() => {
     const matches = rows.filter((row) =>
@@ -519,16 +544,19 @@ const issueColumns: [string, string][] = [
 
 const issueStatuses = ["open", "in_progress", "resolved", "closed"];
 
-function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => void }) {
-  const [search, setSearch] = useState("");
-  const [statuses, setStatuses] = useState<string[]>(issueStatuses);
-  const [kind, setKind] = useState("");
-  const [priority, setPriority] = useState("");
-  const [owner, setOwner] = useState("");
-  const [dueFrom, setDueFrom] = useState("");
-  const [dueTo, setDueTo] = useState("");
-  const [sortKey, setSortKey] = useState("due");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+function IssueRecordsTable({ rows, onEdit, projectId }: { rows: Row[]; onEdit: (r: Row) => void; projectId: string }) {
+  const savedKey = (field: string) => `pm-site:list:issues:${projectId}:${field}`;
+  const [search, setSearch] = useSavedListState(savedKey("search"), "", isString);
+  const [statuses, setStatuses] = useSavedListState(savedKey("statuses"), issueStatuses, (value): value is string[] =>
+    Array.isArray(value) && value.every((status) => issueStatuses.includes(status)));
+  const [kind, setKind] = useSavedListState(savedKey("kind"), "", isString);
+  const [priority, setPriority] = useSavedListState(savedKey("priority"), "", isString);
+  const [owner, setOwner] = useSavedListState(savedKey("owner"), "", isString);
+  const [dueFrom, setDueFrom] = useSavedListState(savedKey("dueFrom"), "", isString);
+  const [dueTo, setDueTo] = useSavedListState(savedKey("dueTo"), "", isString);
+  const [sortKey, setSortKey] = useSavedListState(savedKey("sortKey"), "due", (value): value is string =>
+    isString(value) && issueColumns.some(([key]) => key === value));
+  const [sortDirection, setSortDirection] = useSavedListState(savedKey("sortDirection"), "asc" as "asc" | "desc", isSortDirection);
   const ownerOptions = [...new Map(rows.filter((row) => row.owner).map((row) => [
     ownerFilterKey(row), {
       value: ownerFilterKey(row),
@@ -1623,10 +1651,11 @@ function App() {
   const requestSequence = useRef(0);
   const [page, setPage] = useState(0),
     [projects, setProjects] = useState<Row[]>([]),
-    [overview, setOverview] = useState<Row[]>([]),
-    [pid, setPid] = useState("");
+    [overview, setOverview] = useState<Row[]>([]);
+  const [pid, setPid] = useSavedListState("pm-site:selected-project", "", isString);
   const [all, setAll] = useState<Record<string, Row[]>>({}),
     [analysis, setAnalysis] = useState<Row | null>(null),
+    [bootstrapped, setBootstrapped] = useState(false),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [toast, setToast] = useState("");
@@ -1711,6 +1740,7 @@ function App() {
     api("/bootstrap")
       .then((r) => {
         csrf = r.csrf;
+        setBootstrapped(true);
         return load();
       })
       .catch((e) => {
@@ -1719,9 +1749,10 @@ function App() {
       });
   }, []);
   useEffect(() => {
+    if (!bootstrapped) return;
     loadProject();
     setRecentReportId("");
-  }, [pid, start, end]);
+  }, [bootstrapped, pid, start, end]);
   useEffect(() => {
     if (page === 5)
       api("/reports")
@@ -2497,6 +2528,7 @@ function App() {
                     {tab === "times" ? (
                       <TimeRecordsTable
                         key={pid}
+                        projectId={pid}
                         rows={all.times || []}
                         onEdit={(row) => openModal("times", row)}
                       />
@@ -2520,7 +2552,7 @@ function App() {
                 </>
               )}
               {page === 3 && (
-                <IssueRecordsTable key={pid} rows={all.issues || []}
+                <IssueRecordsTable key={pid} projectId={pid} rows={all.issues || []}
                   onEdit={(r) => openModal("issues", r)} />
               )}
               {page === 4 && (
