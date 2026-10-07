@@ -460,7 +460,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
   return (
     <section className="panel issue-timeline-panel">
       <div className="panel-head">
-        <div><h3>事項追蹤甘特圖</h3><span className="muted">建立日到期限；顏色依狀態變更時間分段</span></div>
+        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；建立日到期限按狀態變更時間分段</span></div>
       </div>
       <div className="timeline-legend">
         {Object.keys(issueTimelineColors).map((status) => <span key={status}>
@@ -702,6 +702,7 @@ function IssueRecordsTable({ rows, onEdit, projectId }: { rows: Row[]; onEdit: (
       : [...selected, value]);
   };
   return (
+    <>
     <section className="panel">
       <div className="time-filters issue-filters">
         <label className="issue-search">關鍵字
@@ -740,6 +741,8 @@ function IssueRecordsTable({ rows, onEdit, projectId }: { rows: Row[]; onEdit: (
         <div className="time-no-results">{rows.length ? "沒有符合篩選的事項" : "尚無事項"}</div>
       )}
     </section>
+    <IssueTimeline rows={filtered} />
+    </>
   );
 }
 
@@ -2643,11 +2646,8 @@ function App() {
                 </>
               )}
               {page === 3 && (
-                <>
-                  <IssueTimeline rows={all.issues || []} />
-                  <IssueRecordsTable key={pid} projectId={pid} rows={all.issues || []}
-                    onEdit={(r) => openModal("issues", r)} />
-                </>
+                <IssueRecordsTable key={pid} projectId={pid} rows={all.issues || []}
+                  onEdit={(r) => openModal("issues", r)} />
               )}
               {page === 4 && (
                 <ImportView pid={pid} notify={notify} reload={reload} />
