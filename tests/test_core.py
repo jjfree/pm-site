@@ -212,6 +212,66 @@ def test_owner_assignments_link_to_project_members_and_preserve_legacy_values(cl
     assert client.delete(f"/api/records/members/{member['id']}?version={inactive['version']}").status_code == 409
 
 
+def test_aliases_appear_in_records_exports_and_internal_report_only(client, project):
+    pid = project["id"]
+    member = client.post("/api/records/members", json={
+        "project_id": pid, "person": "Lin", "alias": "Alex", "role": "PM",
+    }).json()
+    other = client.post("/api/records/projects", json={"name": "Other", "tax_basis": "exclusive"}).json()
+    client.post("/api/records/members", json={
+        "project_id": other["id"], "person": "Lin", "alias": "Different",
+    })
+    client.put(f"/api/records/projects/{pid}", json={
+        **body(project), "owner_member_id": member["id"],
+    })
+    for kind, title in (("issues", "Issue"), ("works", "Work"), ("deliverables", "Delivery")):
+        client.post(f"/api/records/{kind}", json={
+            "project_id": pid, "title": title, "owner_member_id": member["id"],
+        })
+    client.post("/api/records/issues", json={
+        "project_id": pid, "title": "Legacy", "owner": "Lin",
+    })
+    client.post("/api/records/times", json={
+        "project_id": pid, "person": "Lin", "date": "2025-01-01", "hours": 8,
+    })
+    client.post("/api/records/rates", json={
+        "project_id": pid, "role": "PM", "person": "Lin", "amount": "100",
+        "start": "2025-01-01",
+    })
+    assert client.get("/api/overview").json()[0]["owner_alias"] == "Alex"
+    assert client.get("/api/records/projects?aliases=true").json()[0]["owner_alias"] == "Alex"
+    for kind in ("issues", "works", "deliverables"):
+        rows = client.get(f"/api/records/{kind}?project_id={pid}&aliases=true").json()
+        assert rows[0]["owner_alias"] == "Alex"
+        sheet = load_workbook(io.BytesIO(client.get(
+            f"/api/exports/{kind}?project_id={pid}&fmt=xlsx"
+        ).content)).active
+        assert "owner_alias" in [cell.value for cell in sheet[1]]
+        assert any(cell.value == "Alex" for cell in sheet[2])
+        if kind == "issues":
+            assert rows[1]["owner_alias"] == ""  # Free-text owners are not silently linked.
+    for kind in ("times", "rates"):
+        rows = client.get(f"/api/records/{kind}?project_id={pid}&aliases=true").json()
+        assert rows[0]["person_alias"] == "Alex"
+        sheet = load_workbook(io.BytesIO(client.get(
+            f"/api/exports/{kind}?project_id={pid}&fmt=xlsx"
+        ).content)).active
+        assert "person_alias" in [cell.value for cell in sheet[1]]
+        assert any(cell.value == "Alex" for cell in sheet[2])
+    report = client.post("/api/reports", json={"project_id": pid}).json()
+    assert report["snapshot"]["project"]["owner_alias"] == "Alex"
+    assert report["snapshot"]["issues"][0]["owner_alias"] == "Alex"
+    pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
+    cells = [cell.text for slide in pptx.slides for shape in slide.shapes
+             if shape.has_table for row in shape.table.rows for cell in row.cells]
+    assert "Lin（Alex）" in cells
+    public = client.post("/api/reports", json={"project_id": pid, "external": True}).json()
+    assert "Alex" not in json.dumps(public["snapshot"])
+    public_pptx = client.get(f"/api/reports/{public['id']}/pptx").content
+    with ZipFile(io.BytesIO(public_pptx)) as archive:
+        assert all(b"Alex" not in archive.read(name) for name in archive.namelist() if name.endswith(".xml"))
+
+
 def test_explicit_bulk_role_change_checks_preview_and_updates_atomically(client, project):
     pid = project["id"]
     client.post("/api/records/members", json={"project_id": pid, "person": "Member-A", "role": "Engineer"})

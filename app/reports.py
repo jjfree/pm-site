@@ -105,7 +105,10 @@ def make_pptx(snapshot, sections):
         return box
 
     def table(title, columns, rows):
-        widths = [5.5] + [(11.9 - 5.5) / (len(columns) - 1)] * (len(columns) - 1)
+        if any(key == "owner" for _, key in columns):
+            widths = [4.1] + [2.4 if key == "owner" else 1.8 for _, key in columns[1:]]
+        else:
+            widths = [5.5] + [(11.9 - 5.5) / (len(columns) - 1)] * (len(columns) - 1)
         labels = {
             "open": "待處理",
             "in_progress": "處理中",
@@ -135,6 +138,10 @@ def make_pptx(snapshot, sections):
 
         def value(item, key):
             v = item.get(key)
+            if key == "owner" and not v:
+                return "未指定"
+            if key == "owner" and v and item.get("owner_alias"):
+                v = f"{v}（{item['owner_alias']}）"
             return (
                 "待確認"
                 if v is None
@@ -230,19 +237,25 @@ def make_pptx(snapshot, sections):
     if "issues" in sections:
         table(
             "議題與決策",
-            [("事項", "title"), ("類型", "kind"), ("優先級", "priority"), ("狀態", "status")],
+            [("事項", "title"), ("類型", "kind"), ("優先級", "priority"), ("狀態", "status")]
+            if snapshot["external"] else
+            [("事項", "title"), ("負責人", "owner"), ("類型", "kind"), ("優先級", "priority"), ("狀態", "status")],
             snapshot["issues"],
         )
     if "works" in sections:
         table(
             "待辦與里程碑",
-            [("工作", "title"), ("類型", "kind"), ("期限", "due"), ("狀態", "status")],
+            [("工作", "title"), ("類型", "kind"), ("期限", "due"), ("狀態", "status")]
+            if snapshot["external"] else
+            [("工作", "title"), ("負責人", "owner"), ("類型", "kind"), ("期限", "due"), ("狀態", "status")],
             snapshot["works"],
         )
     if "deliverables" in sections:
         table(
             "交付與查核",
-            [("交付", "title"), ("初步檢視", "review"), ("需查核", "applicable"), ("正式結果", "result")],
+            [("交付", "title"), ("初步檢視", "review"), ("需查核", "applicable"), ("正式結果", "result")]
+            if snapshot["external"] else
+            [("交付", "title"), ("負責人", "owner"), ("初步檢視", "review"), ("需查核", "applicable"), ("正式結果", "result")],
             snapshot["deliverables"],
         )
     if "scenario" in sections and snapshot.get("scenario") and not snapshot["external"]:

@@ -99,6 +99,11 @@ const labels: Row = {
   rejected: "未採用",
 };
 const name = (v: any) => labels[v] || v || "—";
+const personDisplay = (person: any, alias: any) =>
+  person && alias ? `${person}（${alias}）` : String(person || "");
+const ownerDisplay = (row: Row) => personDisplay(row.owner, row.owner_alias);
+const ownerFilterKey = (row: Row) => row.owner_member_id
+  ? `member:${row.owner_member_id}` : `legacy:${row.owner}`;
 const num = (v: any) =>
   v === null || v === undefined || v === ""
     ? "待估"
@@ -373,8 +378,10 @@ function DataTable({
                     "result",
                   ].includes(k) ? (
                     <Badge value={r[k]} />
-                  ) : k === "owner" && r[k] && !r.owner_member_id ? (
-                    <>{r[k]} <small className="legacy-owner">待重新指派</small></>
+                  ) : k === "owner" && r[k] ? (
+                    <>{ownerDisplay(r)} {!r.owner_member_id && <small className="legacy-owner">待重新指派</small>}</>
+                  ) : k === "person" && r[k] ? (
+                    personDisplay(r[k], r.person_alias)
                   ) : r[k] === true ? (
                     "是"
                   ) : r[k] === false ? (
@@ -467,7 +474,8 @@ function TimeRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => v
         <label>日期起<input type="date" value={dateFrom} onChange={(e) => updateFilter(setDateFrom, e.target.value)} /></label>
         <label>日期迄<input type="date" value={dateTo} onChange={(e) => updateFilter(setDateTo, e.target.value)} /></label>
         <label>人員<select value={person} onChange={(e) => updateFilter(setPerson, e.target.value)}>
-          <option value="">全部人員</option>{options("person").map((value) => <option key={value}>{value}</option>)}
+          <option value="">全部人員</option>{options("person").map((value) =>
+            <option key={value} value={value}>{personDisplay(value, rows.find((row) => row.person === value)?.person_alias)}</option>)}
         </select></label>
         <label>角色<select value={role} onChange={(e) => updateFilter(setRole, e.target.value)}>
           <option value="">全部角色</option><option value="__missing__">未指定</option>
@@ -519,8 +527,12 @@ function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => 
   const [dueTo, setDueTo] = useState("");
   const [sortKey, setSortKey] = useState("due");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const ownerOptions = [...new Set(rows.map((row) => String(row.owner || "")).filter(Boolean))]
-    .sort((a, b) => a.localeCompare(b, "zh-TW"));
+  const ownerOptions = [...new Map(rows.filter((row) => row.owner).map((row) => [
+    ownerFilterKey(row), {
+      value: ownerFilterKey(row),
+      label: `${ownerDisplay(row)}${row.owner_member_id ? "" : "（待重新指派）"}`,
+    },
+  ])).values()].sort((a, b) => a.label.localeCompare(b.label, "zh-TW"));
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("zh-TW");
     const priorityOrder: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
@@ -529,15 +541,15 @@ function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => 
       (!status || row.status === status) &&
       (!kind || row.kind === kind) &&
       (!priority || row.priority === priority) &&
-      (!owner || (owner === "__missing__" ? !row.owner : row.owner === owner)) &&
+      (!owner || (owner === "__missing__" ? !row.owner : ownerFilterKey(row) === owner)) &&
       (!dueFrom || (row.due && row.due >= dueFrom)) &&
       (!dueTo || (row.due && row.due <= dueTo)) &&
-      (!query || [row.title, row.owner, row.description, row.action, row.decision]
+      (!query || [row.title, ownerDisplay(row), row.description, row.action, row.decision]
         .some((value) => String(value || "").toLocaleLowerCase("zh-TW").includes(query)))
     );
     return matches.sort((a, b) => {
-      const left = String(a[sortKey] ?? "").trim();
-      const right = String(b[sortKey] ?? "").trim();
+      const left = String(sortKey === "owner" ? ownerDisplay(a) : a[sortKey] ?? "").trim();
+      const right = String(sortKey === "owner" ? ownerDisplay(b) : b[sortKey] ?? "").trim();
       if (!left || !right) {
         if (!left && right) return 1;
         if (left && !right) return -1;
@@ -583,7 +595,7 @@ function IssueRecordsTable({ rows, onEdit }: { rows: Row[]; onEdit: (r: Row) => 
         </select></label>
         <label>負責人<select value={owner} onChange={(e) => setOwner(e.target.value)}>
           <option value="">全部負責人</option><option value="__missing__">未指定</option>
-          {ownerOptions.map((value) => <option key={value} value={value}>{value}</option>)}
+          {ownerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
         </select></label>
         <label>期限起<input type="date" value={dueFrom} onChange={(e) => setDueFrom(e.target.value)} /></label>
         <label>期限迄<input type="date" value={dueTo} onChange={(e) => setDueTo(e.target.value)} /></label>
@@ -635,7 +647,7 @@ function ProjectPeoplePanel({
       {roleRates.length ? roleRates.map((rate) => (
         <div className="role-rate-row" key={rate.id}>
           <span className="rate-purpose">{name(rate.purpose)}</span>
-          <span>{rate.person || "角色通用"}</span>
+          <span>{rate.person ? personDisplay(rate.person, rate.person_alias) : "角色通用"}</span>
           <strong>{num(rate.amount)}／{name(rate.unit)}</strong>
           <span>{rate.start}－{rate.end || "持續有效"}</span>
           <button className="link" onClick={() => onOpen("rates", rate)}>編輯<ChevronRight size={14} /></button>
@@ -908,7 +920,7 @@ function RecordModal({
                       </option>)}
                     </select>
                     {legacyOwner && <small className="field-hint">原負責人：{legacyOwner}（待重新指派）
-                      {suggestedOwner && `；可能對應 ${suggestedOwner.person}，請自行確認`}
+                      {suggestedOwner && `；可能對應 ${personDisplay(suggestedOwner.person, suggestedOwner.alias)}，請自行確認`}
                     </small>}
                     {kind === "projects" && !isExisting && <small className="field-hint">建立專案並新增成員後，即可指定負責人。</small>}
                     {isExisting && !ownerMembers.length && <small className="field-hint">請先在「成員、角色與單價」新增專案成員。</small>}
@@ -943,9 +955,23 @@ function RecordModal({
                       }}
                     />
                     <datalist id="project-member-options">
-                      {memberNames.map((person) => <option key={person} value={person} />)}
+                      {memberNames.map((person) => <option key={person} value={person}
+                        label={personDisplay(person, members.find((member) => member.person === person)?.alias)} />)}
                     </datalist>
+                    {members.find((member) => member.person === form.person)?.alias &&
+                      <small className="field-hint">{personDisplay(form.person, members.find((member) => member.person === form.person)?.alias)}</small>}
                     <small className="field-hint">選擇成員會帶入預設角色；也可輸入尚未建檔的人員。</small>
+                  </>
+                ) : kind === "rates" && f.key === "person" ? (
+                  <>
+                    <input list="rate-member-options" value={form.person ?? ""}
+                      onChange={(e) => setForm({ ...form, person: e.target.value })} />
+                    <datalist id="rate-member-options">
+                      {members.map((member) => <option key={member.id} value={member.person}
+                        label={personDisplay(member.person, member.alias)} />)}
+                    </datalist>
+                    {members.find((member) => member.person === form.person)?.alias &&
+                      <small className="field-hint">{personDisplay(form.person, members.find((member) => member.person === form.person)?.alias)}</small>}
                   </>
                 ) : kind === "rates" && f.key === "role" ? (
                   <>
@@ -1615,7 +1641,7 @@ function App() {
   async function load() {
     try {
       const [p, o] = await Promise.all([
-        api("/records/projects"),
+        api("/records/projects?aliases=true"),
         api("/overview"),
       ]);
       setProjects(p);
@@ -1649,7 +1675,7 @@ function App() {
         "payments",
       ];
       const results = await Promise.all(
-        kinds.map((k) => api(`/records/${k}?project_id=${pid}`)),
+        kinds.map((k) => api(`/records/${k}?project_id=${pid}&aliases=true`)),
       );
       const a = await api(
         `/analytics/${pid}${start || end ? "?" + new URLSearchParams({ ...(start ? { start } : {}), ...(end ? { end } : {}) }) : ""}`,
@@ -1701,7 +1727,7 @@ function App() {
   async function bulkMemberRole(member: Row) {
     const entries = (all.times || []).filter((entry) => entry.person === member.person && entry.role !== member.role);
     if (!entries.length) return;
-    if (!window.confirm(`將 ${member.person} 的 ${entries.length} 筆既有工時改為「${member.role}」？歷史人工成本可能變動，請確認這些紀錄都應使用此角色。`)) return;
+    if (!window.confirm(`將 ${personDisplay(member.person, member.alias)} 的 ${entries.length} 筆既有工時改為「${member.role}」？歷史人工成本可能變動，請確認這些紀錄都應使用此角色。`)) return;
     try {
       const result = await api("/times/bulk-role", "POST", {
         project_id: pid, person: member.person, role: member.role,
@@ -2032,7 +2058,7 @@ function App() {
                               <td>
                                 <Badge value={p.status} />
                               </td>
-                              <td>{p.owner || "—"}{p.owner && !p.owner_member_id && <small className="legacy-owner">待重新指派</small>}</td>
+                              <td>{ownerDisplay(p) || "—"}{p.owner && !p.owner_member_id && <small className="legacy-owner">待重新指派</small>}</td>
                               <td>
                                 {p.open_issues ? `${p.open_issues} 件` : "—"}
                               </td>
@@ -2131,7 +2157,7 @@ function App() {
                       <h2>{project.name}</h2>
                       <p>{project.summary || "尚未填寫摘要"}</p>
                       <div className="detail-meta">
-                        <span>負責人：{project.owner || "未設定"}{project.owner && !project.owner_member_id && "（待重新指派）"}</span>
+                        <span>負責人：{ownerDisplay(project) || "未設定"}{project.owner && !project.owner_member_id && "（待重新指派）"}</span>
                         <span>
                           期間：{project.start || "未設定"} —{" "}
                           {project.end || "未設定"}

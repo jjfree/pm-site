@@ -139,6 +139,27 @@ def create_app(directory=None):
         scenarios = [evaluate_scenario(project, s, rates, summary) for s in store.list("scenarios", ident)]
         return project, summary, scenarios
 
+    def with_aliases(kind, rows):
+        if not rows or kind not in {"projects", "works", "deliverables", "issues", "times", "rates"}:
+            return rows
+        members = store.list("members")
+        by_id = {member["id"]: member for member in members}
+        by_name = {(member["project_id"], member["person"]): member for member in members}
+        if kind in {"times", "rates"}:
+            return [
+                {
+                    **row,
+                    "person_alias": by_name.get((row["project_id"], row.get("person", "")), {}).get("alias", ""),
+                }
+                for row in rows
+            ]
+        def owner_alias(row):
+            member = by_id.get(row.get("owner_member_id"))
+            project_id = row["id"] if kind == "projects" else row["project_id"]
+            return member.get("alias", "") if member and member["project_id"] == project_id else ""
+
+        return [{**row, "owner_alias": owner_alias(row)} for row in rows]
+
     @app.get("/api/health")
     def health():
         return {
@@ -165,7 +186,7 @@ def create_app(directory=None):
     def overview():
         result = []
         today = date.today().isoformat()
-        for p in store.list("projects"):
+        for p in with_aliases("projects", store.list("projects")):
             _, summary, _ = project_bundle(p["id"])
             issues = store.list("issues", p["id"])
             works = store.list("works", p["id"])
@@ -194,9 +215,11 @@ def create_app(directory=None):
         return {"project": p, "summary": summary, "scenarios": scenarios}
 
     @app.get("/api/records/{kind}")
-    def records(kind: str, project_id: str | None = None):
+    def records(kind: str, project_id: str | None = None, aliases: bool = False):
         check_kind(kind)
         rows = store.list(kind, project_id)
+        if aliases:
+            rows = with_aliases(kind, rows)
         return [{key: value for key, value in row.items() if key != "tax_basis"} for row in rows] if kind == "rates" else rows
 
     @app.post("/api/times/bulk-role")
@@ -486,7 +509,7 @@ def create_app(directory=None):
         check_kind(kind)
         if fmt not in {"csv", "xlsx"}:
             raise HTTPException(422, "匯出格式錯誤")
-        content = export_table(records(kind, project_id), fmt)
+        content = export_table(records(kind, project_id, aliases=True), fmt)
         media = (
             "text/csv"
             if fmt == "csv"
@@ -506,11 +529,11 @@ def create_app(directory=None):
         )
         scenario = next((s for s in scenarios if s["id"] == payload.get("scenario_id")), None)
         snapshot = make_snapshot(
-            project,
+            with_aliases("projects", [project])[0],
             summary,
-            store.list("issues", pid),
-            store.list("works", pid),
-            store.list("deliverables", pid),
+            with_aliases("issues", store.list("issues", pid)),
+            with_aliases("works", store.list("works", pid)),
+            with_aliases("deliverables", store.list("deliverables", pid)),
             bool(payload.get("external")),
             str(payload.get("title", ""))[:250],
             scenario,
