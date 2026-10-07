@@ -122,7 +122,7 @@ const labels: Row = {
 };
 const name = (v: any) => labels[v] || v || "—";
 const personDisplay = (person: any, alias: any) =>
-  person && alias ? `${person}（${alias}）` : String(person || "");
+  alias ? String(alias) : String(person || "");
 const ownerDisplay = (row: Row) => personDisplay(row.owner, row.owner_alias);
 const ownerFilterKey = (row: Row) => row.owner_member_id
   ? `member:${row.owner_member_id}` : `legacy:${row.owner}`;
@@ -430,6 +430,95 @@ function DataTable({
     </div>
   ) : (
     <Empty />
+  );
+}
+
+const issueTimelineColors: Row = {
+  open: "#94a3ad",
+  in_progress: "#4779b5",
+  resolved: "#55a486",
+  closed: "#53636c",
+};
+const issueTimelineStatusNames: Row = {
+  open: "待處理",
+  in_progress: "處理中",
+  resolved: "已解決",
+  closed: "已結案",
+};
+function IssueTimeline({ rows }: { rows: Row[] }) {
+  const dated = rows.filter((row) => row.created && row.due);
+  const dates = dated.flatMap((row) => [row.created.slice(0, 10), row.due]);
+  if (!rows.length) return null;
+  const low = dates.length ? dates.reduce((a, b) => a < b ? a : b) : "";
+  const high = dates.length ? dates.reduce((a, b) => a > b ? a : b) : "";
+  const dayNumber = (value: string) => Math.floor(Date.parse(`${value}T00:00:00Z`) / 86400000);
+  const rangeDays = low ? Math.max(1, dayNumber(high) - dayNumber(low) + 1) : 1;
+  const ticks = low ? [0, 0.25, 0.5, 0.75, 1].map((fraction) => ({
+    label: new Date((dayNumber(low) + Math.round((rangeDays - 1) * fraction)) * 86400000).toISOString().slice(0, 10),
+    position: `${fraction * 100}%`,
+  })) : [];
+  return (
+    <section className="panel issue-timeline-panel">
+      <div className="panel-head">
+        <div><h3>事項追蹤甘特圖</h3><span className="muted">建立日到期限；顏色依狀態變更時間分段</span></div>
+      </div>
+      <div className="timeline-legend">
+        {Object.keys(issueTimelineColors).map((status) => <span key={status}>
+          <i style={{ background: issueTimelineColors[status] }} />{issueTimelineStatusNames[status]}
+        </span>)}
+      </div>
+      <div className="issue-timeline-scroll">
+        <div className="issue-timeline" style={{ minWidth: `${Math.max(700, rangeDays * 4)}px` }}>
+          <div className="timeline-axis"><div />
+            <div className="timeline-axis-dates">{ticks.length ? ticks.map((tick, i) => <span key={i} style={{ left: tick.position }}>{tick.label}</span>) : <span>尚無可排程日期</span>}</div>
+          </div>
+          {rows.map((row) => {
+            const start = row.created?.slice(0, 10);
+            const due = row.due;
+            const owner = row.owner_alias || row.owner || "未指定";
+            if (!start || !due) return <div className="timeline-row" key={row.id}>
+              <div className="timeline-item-label"><strong>{row.title}</strong><small>{owner}</small></div>
+              <div className="timeline-track"><span className="timeline-unscheduled">{!due ? "未設定期限" : "未設定建立日"}</span></div>
+            </div>;
+            const startDay = dayNumber(start);
+            const endDay = Math.max(startDay, dayNumber(due));
+            const total = Math.max(1, endDay - startDay + 1);
+            const history = row.status_history?.length
+              ? row.status_history
+              : [{ at: row.created, status: row.status, owner: row.owner, owner_alias: row.owner_alias }];
+            const events = history.map((event: Row, index: number) => ({
+              day: Math.max(startDay, dayNumber(String(event.at || row.created).slice(0, 10))), event, index,
+            })).sort((a: Row, b: Row) => a.day - b.day || a.index - b.index)
+              .reduce((acc: Row[], current: Row) => {
+                if (acc.length && acc[acc.length - 1].day === current.day) acc[acc.length - 1] = current;
+                else acc.push(current);
+                return acc;
+              }, []);
+            return <div className="timeline-row" key={row.id}>
+              <div className="timeline-item-label"><strong>{row.title}</strong><small>{owner}</small></div>
+              <div className="timeline-track" title={`${start} — ${due}`}>
+                {events.map((item: Row, index: number) => {
+                  const end = events[index + 1]?.day ?? endDay + 1;
+                  const left = (item.day - startDay) / total * 100;
+                  const width = Math.max((end - item.day) / total * 100, 0);
+                  const eventOwner = item.event.owner_alias || item.event.owner || owner;
+                  const eventStatus = issueTimelineStatusNames[item.event.status] || "待處理";
+                  const eventDate = new Date(item.event.at).toLocaleDateString("sv-SE");
+                  return <span key={`${item.day}-${index}`} className="timeline-segment"
+                    style={{ left: `${left}%`, width: `${width}%`, background: issueTimelineColors[item.event.status] || issueTimelineColors.open }}
+                    title={`${eventStatus} · ${eventOwner} · ${eventDate}`}>
+                    {width >= 12 ? eventOwner : ""}
+                  </span>;
+                })}
+              </div>
+            </div>;
+          })}
+          <div className="timeline-axis timeline-axis-bottom"><div />
+            <div className="timeline-axis-dates">{ticks.map((tick, i) => <span key={i} style={{ left: tick.position }}>{tick.label}</span>)}</div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -2554,8 +2643,11 @@ function App() {
                 </>
               )}
               {page === 3 && (
-                <IssueRecordsTable key={pid} projectId={pid} rows={all.issues || []}
-                  onEdit={(r) => openModal("issues", r)} />
+                <>
+                  <IssueTimeline rows={all.issues || []} />
+                  <IssueRecordsTable key={pid} projectId={pid} rows={all.issues || []}
+                    onEdit={(r) => openModal("issues", r)} />
+                </>
               )}
               {page === 4 && (
                 <ImportView pid={pid} notify={notify} reload={reload} />

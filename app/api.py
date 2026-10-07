@@ -158,7 +158,39 @@ def create_app(directory=None):
             project_id = row["id"] if kind == "projects" else row["project_id"]
             return member.get("alias", "") if member and member["project_id"] == project_id else ""
 
-        return [{**row, "owner_alias": owner_alias(row)} for row in rows]
+        result = [{**row, "owner_alias": owner_alias(row)} for row in rows]
+        if kind in {"works", "issues"}:
+            with store.connect() as db:
+                for row in result:
+                    audits = db.execute(
+                        "SELECT action,at,before,after FROM audits WHERE record_id=? ORDER BY id",
+                        (row["id"],),
+                    ).fetchall()
+                    history = []
+                    previous = None
+                    for audit in audits:
+                        after = json.loads(audit["after"]) if audit["after"] else {}
+                        before = json.loads(audit["before"]) if audit["before"] else {}
+                        if audit["action"] == "create" or any(
+                            before.get(key) != after.get(key)
+                            for key in ("status", "owner", "owner_member_id")
+                        ):
+                            member = by_id.get(after.get("owner_member_id"))
+                            current = {
+                                "at": audit["at"],
+                                "status": after.get("status", row["status"]),
+                                "owner": after.get("owner", ""),
+                                "owner_member_id": after.get("owner_member_id", ""),
+                                "owner_alias": member.get("alias", "") if member else "",
+                            }
+                            if not previous or any(
+                                previous.get(key) != current.get(key)
+                                for key in ("status", "owner", "owner_member_id")
+                            ):
+                                history.append(current)
+                                previous = current
+                    row["status_history"] = history
+        return result
 
     @app.get("/api/health")
     def health():

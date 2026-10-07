@@ -8,6 +8,7 @@ from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.enum.chart import XL_CHART_TYPE
 from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE
 from pptx.util import Inches, Pt
 
 
@@ -43,7 +44,18 @@ def make_snapshot(project, summary, issues, works, deliverables, external=False,
         return {
             "project": {k: project[k] for k in ["name", "code", "status", "summary"]},
             "summary": {},
-            "issues": [{k: i[k] for k in ["title", "kind", "status", "priority"]} for i in issues],
+            "issues": [
+                {
+                    **{k: i[k] for k in ["title", "kind", "status", "priority"]},
+                    "due": i.get("due"),
+                    "created": i.get("created", ""),
+                    "status_history": [
+                        {k: event[k] for k in ("at", "status")}
+                        for event in i.get("status_history", [])
+                    ],
+                }
+                for i in issues
+            ],
             "works": [{k: i[k] for k in ["title", "kind", "due", "status"]} for i in works],
             "deliverables": [
                 {k: i[k] for k in ["title", "code", "review", "applicable", "result"]} for i in deliverables
@@ -104,6 +116,97 @@ def make_pptx(snapshot, sections):
         p.font.size, p.font.name, p.font.color.rgb = Pt(size), "Microsoft JhengHei", color
         return box
 
+    def issue_timeline(rows):
+        if not rows:
+            return
+        colors = {
+            "open": RGBColor(148, 163, 173),
+            "in_progress": RGBColor(71, 121, 181),
+            "resolved": RGBColor(70, 148, 112),
+            "closed": RGBColor(83, 99, 108),
+        }
+        status_names = {"open": "待處理", "in_progress": "處理中", "resolved": "已解決", "closed": "已結案"}
+        dated = [row for row in rows if row.get("created") and row.get("due")]
+        starts = [row["created"][:10] for row in dated]
+        ends = [max(row["due"], row["created"][:10]) for row in dated]
+        if not starts:
+            s = slide("事項追蹤甘特圖")
+            text(s, "事項尚未設定期限，無法繪製追蹤區間", 0.8, 1.8, 11.5, 0.6, 18)
+            return
+        low, high = min(starts), max(ends)
+        start_day = datetime.fromisoformat(low).date()
+        end_day = datetime.fromisoformat(high).date()
+        span = max(1, (end_day - start_day).days + 1)
+        pages = [rows[i:i + 8] for i in range(0, len(rows), 8)]
+        for page_index, page_rows in enumerate(pages):
+            s = slide("事項追蹤甘特圖" + (f" ({page_index + 1}/{len(pages)})" if len(pages) > 1 else ""))
+            left, chart_width, top = 4.35, 8.15, 1.75
+            text(s, f"{low} — {high}", left, 1.28, chart_width, 0.3, 10)
+            legend_x = 0.75
+            for status, color in colors.items():
+                swatch = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(legend_x), Inches(1.37), Inches(0.15), Inches(0.15))
+                swatch.fill.solid()
+                swatch.fill.fore_color.rgb = color
+                swatch.line.fill.background()
+                text(s, status_names[status], legend_x + 0.2, 1.3, 0.9, 0.25, 9)
+                legend_x += 1.1
+            for index, row in enumerate(page_rows):
+                y = top + index * 0.62
+                text(s, clipped(row.get("title", ""), 25), 0.72, y, 2.0, 0.27, 10)
+                if not snapshot["external"]:
+                    owner = row.get("owner_alias") or row.get("owner") or "未指定"
+                    text(s, clipped(owner, 18), 2.75, y, 1.45, 0.27, 9)
+                created, due = row.get("created", "")[:10], row.get("due")
+                if not created or not due:
+                    text(s, "未設定期限" if not due else "未設定建立日", left, y, 2.2, 0.28, 9)
+                    continue
+                row_start = datetime.fromisoformat(created).date()
+                row_end = datetime.fromisoformat(due).date()
+                if row_end < row_start:
+                    row_end = row_start
+                row_span = max(1, (row_end - row_start).days + 1)
+                x = left + max(0, (row_start - start_day).days) / span * chart_width
+                width = min(chart_width - (x - left), row_span / span * chart_width)
+                track = s.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(x), Inches(y + 0.02), Inches(max(0.08, width)), Inches(0.22))
+                track.fill.solid()
+                track.fill.fore_color.rgb = RGBColor(235, 240, 242)
+                track.line.fill.background()
+                history = row.get("status_history") or [{"at": created, "status": row.get("status", "open")}]
+                events = []
+                for event in history:
+                    event_day = event.get("at", "")[:10]
+                    if event_day:
+                        events.append((max(row_start, datetime.fromisoformat(event_day).date()), event))
+                if not events:
+                    events = [(row_start, {"status": row.get("status", "open")})]
+                events.sort(key=lambda item: item[0])
+                collapsed = []
+                for event_day, event in events:
+                    if collapsed and collapsed[-1][0] == event_day:
+                        collapsed[-1] = (event_day, event)
+                    else:
+                        collapsed.append((event_day, event))
+                for segment_index, (event_day, event) in enumerate(collapsed):
+                    next_day = collapsed[segment_index + 1][0] if segment_index + 1 < len(collapsed) else row_end + timedelta(days=1)
+                    segment_end = min(row_end + timedelta(days=1), next_day)
+                    if segment_end <= event_day:
+                        continue
+                    offset = (event_day - row_start).days / row_span
+                    segment_width = (segment_end - event_day).days / row_span
+                    bar = s.shapes.add_shape(
+                        MSO_SHAPE.RECTANGLE,
+                        Inches(x + offset * width), Inches(y + 0.02),
+                        Inches(max(0.015, segment_width * width)), Inches(0.22),
+                    )
+                    bar.fill.solid()
+                    bar.fill.fore_color.rgb = colors.get(event.get("status"), colors["open"])
+                    bar.line.fill.background()
+                    if not snapshot["external"] and segment_width * width >= 0.48:
+                        person = event.get("owner_alias") or event.get("owner") or ""
+                        if person:
+                            text(s, clipped(person, 12), x + offset * width + 0.02, y + 0.26,
+                                 max(0.42, segment_width * width - 0.04), 0.18, 7)
+
     def table(title, columns, rows):
         if any(key == "owner" for _, key in columns):
             widths = [4.1] + [2.4 if key == "owner" else 1.8 for _, key in columns[1:]]
@@ -140,8 +243,8 @@ def make_pptx(snapshot, sections):
             v = item.get(key)
             if key == "owner" and not v:
                 return "未指定"
-            if key == "owner" and v and item.get("owner_alias"):
-                v = f"{v}（{item['owner_alias']}）"
+            if key == "owner" and item.get("owner_alias"):
+                v = item["owner_alias"]
             return (
                 "待確認"
                 if v is None
@@ -235,6 +338,7 @@ def make_pptx(snapshot, sections):
                 XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(5), Inches(1.7), Inches(7.4), Inches(4.6), data
             )
     if "issues" in sections:
+        issue_timeline(snapshot["issues"])
         table(
             "議題與決策",
             [("事項", "title"), ("類型", "kind"), ("優先級", "priority"), ("狀態", "status")]

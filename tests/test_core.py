@@ -53,6 +53,41 @@ def test_crud_version_and_relations(client, project):
     assert client.delete(f"/api/records/projects/{pid}?version=2").status_code == 200
 
 
+def test_issue_timeline_tracks_status_and_prioritizes_assignee_alias(client, project):
+    pid = project["id"]
+    member = client.post("/api/records/members", json={
+        "project_id": pid, "person": "林小明", "alias": "Alex", "role": "PM",
+    }).json()
+    issue = client.post("/api/records/issues", json={
+        "project_id": pid, "title": "狀態歷程事項", "owner_member_id": member["id"],
+        "due": "2026-12-31", "status": "open",
+    }).json()
+    updated = client.put(f"/api/records/issues/{issue['id']}", json={
+        **body(issue), "status": "in_progress",
+    })
+    assert updated.status_code == 200
+    timeline_row = next(row for row in client.get(
+        f"/api/records/issues?project_id={pid}&aliases=true"
+    ).json() if row["id"] == issue["id"])
+    assert [event["status"] for event in timeline_row["status_history"]] == ["open", "in_progress"]
+    assert all(event["owner_alias"] == "Alex" for event in timeline_row["status_history"])
+
+    report = client.post("/api/reports", json={"project_id": pid, "sections": ["issues"]}).json()
+    saved_issue = next(row for row in report["snapshot"]["issues"] if row["id"] == issue["id"])
+    assert saved_issue["status_history"] == timeline_row["status_history"]
+    pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
+    texts = [shape.text for slide in pptx.slides for shape in slide.shapes if shape.has_text_frame]
+    assert "事項追蹤甘特圖" in texts
+    assert "Alex" in texts
+    assert "林小明" not in texts
+    public = client.post("/api/reports", json={
+        "project_id": pid, "external": True, "sections": ["issues"],
+    }).json()
+    serialized = json.dumps(public["snapshot"], ensure_ascii=False)
+    assert "Alex" not in serialized and "林小明" not in serialized
+    assert [event["status"] for event in public["snapshot"]["issues"][0]["status_history"]] == ["open", "in_progress"]
+
+
 def test_validation_and_rate_overlap(client, project):
     rate = {
         "project_id": project["id"],
@@ -264,7 +299,8 @@ def test_aliases_appear_in_records_exports_and_internal_report_only(client, proj
     pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
     cells = [cell.text for slide in pptx.slides for shape in slide.shapes
              if shape.has_table for row in shape.table.rows for cell in row.cells]
-    assert "Lin（Alex）" in cells
+    assert "Alex" in cells
+    assert "Lin（Alex）" not in cells
     public = client.post("/api/reports", json={"project_id": pid, "external": True}).json()
     assert "Alex" not in json.dumps(public["snapshot"])
     public_pptx = client.get(f"/api/reports/{public['id']}/pptx").content
