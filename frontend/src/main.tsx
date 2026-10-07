@@ -485,7 +485,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
             const due = row.due;
             const owner = row.owner_alias || row.owner || "未指定";
             if (!start || !due) return <div className="timeline-row" key={row.id}>
-              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>{owner}</small></div>
+              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>負責人：{owner}</small></div>
               <div className="timeline-track"><span className="timeline-unscheduled">{!due ? "未設定期限" : "未設定建立日"}</span></div>
             </div>;
             const startDay = dayNumber(start);
@@ -506,7 +506,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
               day: startDay, event: { at: row.created, status: row.status, owner: row.owner, owner_alias: row.owner_alias },
             });
             return <div className="timeline-row" key={row.id}>
-              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>{owner}</small></div>
+              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>負責人：{owner}</small></div>
               <div className="timeline-track" title={`${start} — ${due}`}>
                 {events.map((item: Row, index: number) => {
                   const end = Math.min(events[index + 1]?.day ?? endDay + 1, endDay + 1);
@@ -518,7 +518,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
                   return <span key={`${item.day}-${index}`} className="timeline-segment"
                     style={{ left: `${left}%`, width: `${width}%`, background: issueTimelineColors[item.event.status] || issueTimelineColors.open }}
                     title={`${eventStatus} · ${eventOwner} · ${eventDate}`}>
-                    {width >= 12 ? eventOwner : ""}
+                    {eventOwner}
                   </span>;
                 })}
               </div>
