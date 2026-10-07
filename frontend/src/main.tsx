@@ -472,7 +472,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
   return (
     <section className="panel issue-timeline-panel">
       <div className="panel-head">
-        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；左側顯示目前負責人，橫條按狀態變更時間分段並標示歷次負責人</span></div>
+        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；負責人顯示在指派當日起的彩色橫條內</span></div>
       </div>
       <div className="timeline-legend">
         {Object.keys(issueTimelineColors).map((status) => <span key={status}>
@@ -480,7 +480,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
         </span>)}
       </div>
       <div className="issue-timeline-scroll">
-        <div className="issue-timeline" style={{ minWidth: `${Math.max(700, rangeDays * 4)}px` }}>
+        <div className="issue-timeline" style={{ minWidth: `${Math.max(700, 263 + rangeDays * 8)}px` }}>
           <div className="timeline-axis"><div />
             <div className="timeline-axis-dates">{ticks.length ? ticks.map((tick, i) => <span key={i} style={{ left: tick.position }}>{tick.label}</span>) : <span>尚無可排程日期</span>}</div>
           </div>
@@ -489,8 +489,8 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
             const due = row.due;
             const owner = row.owner_alias || row.owner || "未指定";
             if (!start || !due) return <div className="timeline-row" key={row.id}>
-              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>負責人：{owner}</small></div>
-              <div className="timeline-track"><span className="timeline-unscheduled">{!due ? "未設定期限" : "未設定建立日"}</span></div>
+              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong></div>
+              <div className="timeline-track"><span className="timeline-unscheduled">{!due ? "未設定期限" : "未設定建立日"} · 負責人：{owner}</span></div>
             </div>;
             const startDay = dayNumber(start);
             const endDay = Math.max(startDay, dayNumber(due));
@@ -510,7 +510,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
               day: startDay, event: { at: row.created, status: row.status, owner: row.owner, owner_alias: row.owner_alias },
             });
             return <div className="timeline-row" key={row.id}>
-              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong><small>負責人：{owner}</small></div>
+              <div className="timeline-item-label"><strong>{[row.number, row.title].filter(Boolean).join(" ")}</strong></div>
               <div className="timeline-track" title={`${start} — ${due}`}>
                 {events.map((item: Row, index: number) => {
                   const end = Math.min(events[index + 1]?.day ?? endDay + 1, endDay + 1);
@@ -518,16 +518,12 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
                   const width = (end - item.day) / rangeDays * 100;
                   const eventOwner = item.event.owner_alias || item.event.owner || "未指定";
                   const ownerChanged = index === 0 || !sameIssueOwner(item.event, events[index - 1].event);
-                  const hasLaterOwnerChange = events.slice(index + 1).some((next: Row) =>
-                    !sameIssueOwner(next.event, item.event));
-                  const showHistoricalOwner = ownerChanged &&
-                    (!sameIssueOwner(item.event, row) || hasLaterOwnerChange);
                   const eventStatus = issueTimelineStatusNames[item.event.status] || "待處理";
                   const eventDate = new Date(item.event.at).toLocaleDateString("sv-SE");
                   return <span key={`${item.day}-${index}`} className="timeline-segment"
                     style={{ left: `${left}%`, width: `${width}%`, background: issueTimelineColors[item.event.status] || issueTimelineColors.open }}
                     title={`${eventStatus} · ${eventOwner} · ${eventDate}`}>
-                    {showHistoricalOwner ? eventOwner : ""}
+                    {ownerChanged && <span className="timeline-owner-label">{eventOwner}</span>}
                   </span>;
                 })}
               </div>

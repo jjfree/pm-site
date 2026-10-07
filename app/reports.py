@@ -159,13 +159,13 @@ def make_pptx(snapshot, sections):
             for index, row in enumerate(page_rows):
                 y = top + index * 0.62
                 label = f"{row.get('number', '')} {row.get('title', '')}".strip()
-                text(s, clipped(label, 25), 0.72, y, 2.0, 0.27, 10)
-                if not snapshot["external"]:
-                    owner = row.get("owner_alias") or row.get("owner") or "未指定"
-                    text(s, clipped(owner, 18), 2.75, y, 1.45, 0.27, 9)
+                text(s, clipped(label, 38), 0.72, y, 3.45, 0.27, 10)
                 created, due = row.get("created", "")[:10], row.get("due")
                 if not created or not due:
-                    text(s, "未設定期限" if not due else "未設定建立日", left, y, 2.2, 0.28, 9)
+                    schedule = "未設定期限" if not due else "未設定建立日"
+                    owner = row.get("owner_alias") or row.get("owner") or "未指定"
+                    text(s, schedule if snapshot["external"] else f"{schedule} · 負責人：{owner}",
+                         left, y, chart_width, 0.28, 9)
                     continue
                 row_start = datetime.fromisoformat(created).date()
                 row_end = datetime.fromisoformat(due).date()
@@ -211,18 +211,15 @@ def make_pptx(snapshot, sections):
                     owner_changed = segment_index == 0 or not same_issue_owner(
                         event, collapsed[segment_index - 1][1]
                     )
-                    later_owner_change = any(
-                        not same_issue_owner(event, later_event)
-                        for _, later_event in collapsed[segment_index + 1:]
-                    )
-                    show_historical_owner = owner_changed and (
-                        not same_issue_owner(event, row) or later_owner_change
-                    )
-                    if not snapshot["external"] and show_historical_owner and segment_width * width >= 0.48:
+                    if not snapshot["external"] and owner_changed and segment_width * width >= 0.28:
                         person = event.get("owner_alias") or event.get("owner") or ""
                         if person:
-                            text(s, clipped(person, 12), x + offset * width + 0.02, y + 0.26,
-                                 max(0.42, segment_width * width - 0.04), 0.18, 7)
+                            badge_width = min(segment_width * width - 0.04, max(0.24, len(person) * 0.09 + 0.12))
+                            badge = text(s, clipped(person, 12), x + offset * width + 0.02,
+                                         y + 0.045, badge_width, 0.16, 7)
+                            badge.fill.solid()
+                            badge.fill.fore_color.rgb = RGBColor(250, 252, 253)
+                            badge.line.fill.background()
 
     def table(title, columns, rows):
         if columns[0][1] == "number":
