@@ -134,7 +134,7 @@ def prepare(kind, project_id, rows, mapping, marker_map=None):
     headers, records, errors = rows[0] if rows else [], [], []
     fields = MODELS[kind].model_fields
     allowed = {str(h["index"]) for h in sanitize_headers(headers) if not h["excluded"]}
-    if any(f not in fields or f in {"project_id", "number"} or str(col) not in allowed
+    if any(f not in fields or f in {"project_id", "number", "owner_member_ids"} or str(col) not in allowed
            for f, col in mapping.items()):
         raise ValueError("映射含未知欄位或敏感／未命名來源欄")
     marker_map = marker_map or {"OK": "complete", "?": "question", "N/A": "not_applicable"}

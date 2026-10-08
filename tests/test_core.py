@@ -183,7 +183,8 @@ def test_gantt_shows_same_owner_once_when_free_text_is_linked(client, project):
         "project_id": project["id"], "title": "Owner link", "owner": "Ted", "due": "2025-01-20",
     }).json()
     linked = client.put(f"/api/records/issues/{issue['id']}", json={
-        **body(issue), "owner_member_id": member["id"],
+        **{key: value for key, value in body(issue).items() if key != "owner_member_ids"},
+        "owner_member_id": member["id"],
     })
     assert linked.status_code == 200
     with client.app.state.store.connect() as db:
@@ -200,6 +201,89 @@ def test_gantt_shows_same_owner_once_when_free_text_is_linked(client, project):
     owner_badge = next(shape for slide in pptx.slides for shape in slide.shapes
                        if shape.has_text_frame and shape.text == "Ted")
     assert abs(owner_badge.left - Inches(4.35 + 4 / 20 * 8.15 + 0.02)) < Inches(0.05)
+
+
+def test_issue_multiple_owners_show_only_latest_set(client, project):
+    pid = project["id"]
+    people = [client.post("/api/records/members", json={
+        "project_id": pid, "person": person, "alias": alias,
+    }).json() for person, alias in (("林小明", "Ted"), ("陳小華", "Alex"), ("王大同", "Pat"))]
+    issue = client.post("/api/records/issues", json={
+        "project_id": pid, "title": "多人負責", "due": "2026-12-31",
+        "owner_member_ids": [people[0]["id"], people[1]["id"]],
+    }).json()
+    assert issue["owner_member_ids"] == [people[0]["id"], people[1]["id"]]
+    changed = client.put(f"/api/records/issues/{issue['id']}", json={
+        **body(issue), "owner_member_ids": [people[1]["id"], people[2]["id"]],
+        "status": "in_progress",
+    }).json()
+    assert changed["owner_member_id"] == people[1]["id"]
+    assert changed["owner"] == "陳小華"
+    row = client.get(f"/api/records/issues?project_id={pid}&aliases=true").json()[0]
+    assert row["owner_display"] == "Alex、Pat"
+    assert row["owner_people"] == [{"id": people[1]["id"], "label": "Alex"},
+                                   {"id": people[2]["id"], "label": "Pat"}]
+    assert [event["status"] for event in row["status_history"]][-1] == "in_progress"
+    inactive = client.put(f"/api/records/members/{people[2]['id']}", json={
+        **body(people[2]), "active": False,
+    }).json()
+    assert client.put(f"/api/records/issues/{issue['id']}", json={
+        **body(changed), "owner_member_ids": [people[1]["id"], people[2]["id"]],
+    }).status_code == 200
+    assert client.post("/api/records/issues", json={
+        "project_id": pid, "title": "不可新指派", "owner_member_ids": [people[2]["id"]],
+    }).status_code == 422
+    assert client.delete(f"/api/records/members/{people[2]['id']}?version={inactive['version']}").status_code == 409
+    assert client.post("/api/records/issues", json={
+        "project_id": pid, "title": "重複", "owner_member_ids": [people[0]["id"]] * 2,
+    }).status_code == 422
+    other = client.post("/api/records/projects", json={
+        "name": "Other", "code": "OTHER", "tax_basis": "exclusive",
+    }).json()
+    assert client.post("/api/records/issues", json={
+        "project_id": other["id"], "title": "跨專案", "owner_member_ids": [people[0]["id"]],
+    }).status_code == 422
+    report = client.post("/api/reports", json={"project_id": pid, "sections": ["issues"]}).json()
+    assert report["snapshot"]["issues"][0]["owner_display"] == "Alex、Pat"
+    pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
+    cells = [cell.text for slide in pptx.slides for shape in slide.shapes
+             if shape.has_table for table_row in shape.table.rows for cell in table_row.cells]
+    assert "Alex、Pat" in cells
+    texts = [shape.text for slide in pptx.slides for shape in slide.shapes if shape.has_text_frame]
+    assert texts.count("Alex、Pat") == 1
+    assert "Ted" not in texts
+    external = client.post("/api/reports", json={
+        "project_id": pid, "external": True, "sections": ["issues"],
+    }).json()
+    serialized = json.dumps(external["snapshot"], ensure_ascii=False)
+    assert all(alias not in serialized for alias in ("Ted", "Alex", "Pat"))
+    latest = client.get(f"/api/records/issues?project_id={pid}").json()[0]
+    cleared = client.put(f"/api/records/issues/{issue['id']}", json={
+        **body(latest), "owner_member_ids": [], "owner_member_id": "", "owner": "",
+    }).json()
+    assert cleared["owner_member_ids"] == [] and cleared["owner"] == ""
+
+
+def test_issue_legacy_single_owner_is_read_as_latest_list(client, project):
+    member = client.post("/api/records/members", json={
+        "project_id": project["id"], "person": "林小明", "alias": "Ted",
+    }).json()
+    issue = client.post("/api/records/issues", json={
+        "project_id": project["id"], "title": "舊版單人", "owner_member_id": member["id"],
+    }).json()
+    with client.app.state.store.connect() as db:
+        record = db.execute("SELECT payload FROM records WHERE id=?", (issue["id"],)).fetchone()
+        payload = json.loads(record["payload"])
+        payload.pop("owner_member_ids")
+        db.execute("UPDATE records SET payload=? WHERE id=?", (json.dumps(payload), issue["id"]))
+    row = client.get(f"/api/records/issues?project_id={project['id']}&aliases=true").json()[0]
+    assert row["owner_member_ids"] == [member["id"]]
+    assert row["owner_display"] == "Ted"
+    raw = client.get(f"/api/records/issues?project_id={project['id']}").json()[0]
+    updated = client.put(f"/api/records/issues/{issue['id']}", json={
+        **body(raw), "status": "in_progress",
+    }).json()
+    assert updated["owner_member_ids"] == [member["id"]]
 
 
 def test_validation_and_rate_overlap(client, project):
@@ -332,7 +416,8 @@ def test_owner_assignments_link_to_project_members_and_preserve_legacy_values(cl
     }).json()
     assert legacy["owner"] == "Old name" and legacy["owner_member_id"] == ""
     assigned = client.put(f"/api/records/issues/{legacy['id']}", json={
-        **body(legacy), "owner_member_id": member["id"], "owner": "Spoofed",
+        **{key: value for key, value in body(legacy).items() if key != "owner_member_ids"},
+        "owner_member_id": member["id"], "owner": "Spoofed",
     }).json()
     assert assigned["owner"] == "Lin" and assigned["owner_member_id"] == member["id"]
     for kind, title in (("works", "Task"), ("deliverables", "Deliverable")):

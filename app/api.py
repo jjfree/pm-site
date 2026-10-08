@@ -134,7 +134,38 @@ def create_app(directory=None):
                 for row in store.list("members", data["project_id"], db)
             ):
                 raise HTTPException(409, "成員姓名與其他成員的別名相同")
-        if kind in {"projects", "works", "deliverables", "issues"} and data["owner_member_id"]:
+        if kind == "issues":
+            old = store.get(kind, ident, db) if ident else None
+            explicit = "owner_member_ids" in payload
+            old_ids = (old.get("owner_member_ids") or
+                       ([old["owner_member_id"]] if old.get("owner_member_id") else [])) if old else []
+            if explicit:
+                selected = data["owner_member_ids"]
+            elif data["owner_member_id"]:
+                selected = [data["owner_member_id"]]
+            elif old and "owner_member_id" not in payload:
+                selected = old_ids
+            else:
+                selected = []
+            if len(selected) != len(set(selected)) or any(not member_id for member_id in selected):
+                raise HTTPException(422, "負責人名單不可重複或包含空值")
+            people = []
+            for member_id in selected:
+                member = store.get("members", member_id, db)
+                if not member or member["project_id"] != data["project_id"]:
+                    raise HTTPException(422, "負責人必須是此專案成員")
+                if not member["active"] and member_id not in old_ids:
+                    raise HTTPException(422, "不可新指派停用的專案成員")
+                people.append(member)
+            data["owner_member_ids"] = selected
+            if people:
+                data["owner_member_id"] = people[0]["id"]
+                data["owner"] = people[0]["person"]
+            elif explicit:
+                data["owner_member_id"] = ""
+                if old_ids or not old or data["owner"] != old.get("owner", ""):
+                    data["owner"] = ""
+        if kind in {"projects", "works", "deliverables"} and data["owner_member_id"]:
             project_id = ident if kind == "projects" else data["project_id"]
             member = store.get("members", data["owner_member_id"], db)
             old = store.get(kind, ident, db) if ident else None
@@ -174,6 +205,14 @@ def create_app(directory=None):
             return member.get("alias", "") if member and member["project_id"] == project_id else ""
 
         result = [{**row, "owner_alias": owner_alias(row)} for row in rows]
+        if kind == "issues":
+            for row in result:
+                ids = row.get("owner_member_ids") or ([row["owner_member_id"]] if row.get("owner_member_id") else [])
+                row["owner_member_ids"] = ids
+                people = [{"id": member_id, "label": by_id[member_id].get("alias") or by_id[member_id]["person"]}
+                          for member_id in ids if member_id in by_id and by_id[member_id]["project_id"] == row["project_id"]]
+                row["owner_people"] = people
+                row["owner_display"] = "、".join(person["label"] for person in people) or row.get("owner", "")
         if kind in {"works", "issues"}:
             with store.connect() as db:
                 for row in result:
@@ -387,7 +426,7 @@ def create_app(directory=None):
                     ):
                         raise HTTPException(409, "已有工時、單價或成員使用此項目；請改為停用")
                     if kind == "members" and any(
-                        row.get("owner_member_id") == ident
+                        row.get("owner_member_id") == ident or ident in row.get("owner_member_ids", [])
                         for related_kind in ("projects", "works", "deliverables", "issues")
                         for row in store.list(related_kind)
                     ):
@@ -486,6 +525,8 @@ def create_app(directory=None):
                     skipped += 1
                     continue
                 data = r["data"]
+                if kind == "issues" and "owner_member_ids" not in r["fields"]:
+                    data = {key: value for key, value in data.items() if key != "owner_member_ids"}
                 old = next(
                     (
                         e

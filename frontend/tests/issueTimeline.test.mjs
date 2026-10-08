@@ -8,25 +8,23 @@ const source = readFileSync(fileURLToPath(new URL("../src/issueTimeline.ts", imp
 const compiled = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText;
-const { ownerLabelIndexes } = await import(
+const { issueOwnerDisplay, issueOwnerFilters } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`
 );
 
-test("unchanged owner appears once in the latest right-hand segment", () => {
-  const events = [
-    { owner: "Ted" },
-    { owner: "張小明", owner_member_id: "member-1", owner_alias: "Ted" },
-    { owner: "張小明", owner_member_id: "member-1", owner_alias: "Ted" },
-  ];
-  assert.deepEqual(ownerLabelIndexes(events), [2]);
+test("latest issue owners use aliases and each person can be filtered", () => {
+  const row = { owner: "張小明", owner_member_ids: ["member-1", "member-2"],
+    owner_people: [{ id: "member-1", label: "Ted" }, { id: "member-2", label: "Alex" }] };
+  assert.equal(issueOwnerDisplay(row), "Ted、Alex");
+  assert.deepEqual(issueOwnerFilters(row), [
+    { value: "member:member-1", label: "Ted" },
+    { value: "member:member-2", label: "Alex" },
+  ]);
 });
 
-test("each changed owner appears in the rightmost segment of that assignment", () => {
-  const events = [
-    { owner: "Rainer" },
-    { owner: "Rainer" },
-    { owner: "張小明", owner_member_id: "member-1", owner_alias: "Ted" },
-    { owner: "張小明", owner_member_id: "member-1", owner_alias: "Ted" },
-  ];
-  assert.deepEqual(ownerLabelIndexes(events), [1, 3]);
+test("legacy owners remain visible until reassigned", () => {
+  assert.equal(issueOwnerDisplay({ owner: "Old name" }), "Old name");
+  assert.deepEqual(issueOwnerFilters({ owner: "Old name" }), [
+    { value: "legacy:Old name", label: "Old name（待重新指派）" },
+  ]);
 });

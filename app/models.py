@@ -98,6 +98,7 @@ class Issue(Record):
     kind: Literal["issue", "risk", "change", "decision"] = "issue"
     owner: str = Field(default="", max_length=120)
     owner_member_id: str = Field(default="", max_length=32)
+    owner_member_ids: list[str] = Field(default_factory=list, max_length=50)
     priority: Literal["low", "medium", "high", "critical"] = "medium"
     status: Literal["open", "in_progress", "resolved", "closed"] = "open"
     due: date | None = None

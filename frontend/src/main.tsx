@@ -35,7 +35,7 @@ import {
   Cell,
 } from "recharts";
 import "./styles.css";
-import { ownerLabelIndexes } from "./issueTimeline";
+import { issueOwnerDisplay, issueOwnerFilters } from "./issueTimeline";
 
 type Row = Record<string, any>;
 const isString = (value: unknown): value is string => typeof value === "string";
@@ -127,8 +127,6 @@ const name = (v: any) => labels[v] || v || "—";
 const personDisplay = (person: any, alias: any) =>
   alias ? String(alias) : String(person || "");
 const ownerDisplay = (row: Row) => personDisplay(row.owner, row.owner_alias);
-const ownerFilterKey = (row: Row) => row.owner_member_id
-  ? `member:${row.owner_member_id}` : `legacy:${row.owner}`;
 const num = (v: any) =>
   v === null || v === undefined || v === ""
     ? "待估"
@@ -405,8 +403,8 @@ function DataTable({
                     "result",
                   ].includes(k) ? (
                     <Badge value={r[k]} />
-                  ) : k === "owner" && r[k] ? (
-                    <>{ownerDisplay(r)} {!r.owner_member_id && <small className="legacy-owner">待重新指派</small>}</>
+                  ) : k === "owner" && (r[k] || r.owner_member_ids?.length) ? (
+                    <>{r.number ? issueOwnerDisplay(r) : ownerDisplay(r)} {!r.owner_member_id && <small className="legacy-owner">待重新指派</small>}</>
                   ) : k === "person" && r[k] ? (
                     personDisplay(r[k], r.person_alias)
                   ) : r[k] === true ? (
@@ -469,7 +467,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
   return (
     <section className="panel issue-timeline-panel">
       <div className="panel-head">
-        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；負責人顯示在其負責期間最右側的彩色橫條，換人時分別標示</span></div>
+        <div><h3>事項追蹤甘特圖</h3><span className="muted">依查詢結果與排序排列；僅顯示最新負責人名單</span></div>
       </div>
       <div className="timeline-legend">
         {Object.keys(issueTimelineColors).map((status) => <span key={status}>
@@ -484,7 +482,7 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
           {rows.map((row) => {
             const start = row.created?.slice(0, 10);
             const due = row.due;
-            const owner = row.owner_alias || row.owner || "未指定";
+            const owner = issueOwnerDisplay(row) || "未指定";
             const issueLabel = [row.number, row.title].filter(Boolean).join(" ");
             if (!start || !due) return <div className="timeline-row" key={row.id}>
               <div className="timeline-item-label"><strong title={issueLabel}>{issueLabel}</strong></div>
@@ -507,7 +505,6 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
             if (!events.length) events.push({
               day: startDay, event: { at: row.created, status: row.status, owner: row.owner, owner_alias: row.owner_alias },
             });
-            const ownerLabels = new Set(ownerLabelIndexes(events.map((item: Row) => item.event)));
             return <div className="timeline-row" key={row.id}>
               <div className="timeline-item-label"><strong title={issueLabel}>{issueLabel}</strong></div>
               <div className="timeline-track" title={`${start} — ${due}`}>
@@ -515,13 +512,12 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
                   const end = Math.min(events[index + 1]?.day ?? endDay + 1, endDay + 1);
                   const left = (item.day - firstDay) / rangeDays * 100;
                   const width = (end - item.day) / rangeDays * 100;
-                  const eventOwner = item.event.owner_alias || item.event.owner || "未指定";
                   const eventStatus = issueTimelineStatusNames[item.event.status] || "待處理";
                   const eventDate = new Date(item.event.at).toLocaleDateString("sv-SE");
                   return <span key={`${item.day}-${index}`} className="timeline-segment"
                     style={{ left: `${left}%`, width: `${width}%`, background: issueTimelineColors[item.event.status] || issueTimelineColors.open }}
-                    title={`${eventStatus} · ${eventOwner} · ${eventDate}`}>
-                    {ownerLabels.has(index) && <span className="timeline-owner-label">{eventOwner}</span>}
+                    title={`${eventStatus} · 最新負責人：${owner} · ${eventDate}`}>
+                    {index === events.length - 1 && <span className="timeline-owner-label" title={owner}>{owner}</span>}
                   </span>;
                 })}
               </div>
@@ -663,11 +659,8 @@ function IssueRecordsTable({ rows, onEdit, projectId }: { rows: Row[]; onEdit: (
   const [sortKey, setSortKey] = useSavedListState(savedKey("sortKey"), "due", (value): value is string =>
     isString(value) && issueColumns.some(([key]) => key === value));
   const [sortDirection, setSortDirection] = useSavedListState(savedKey("sortDirection"), "asc" as "asc" | "desc", isSortDirection);
-  const ownerOptions = [...new Map(rows.filter((row) => row.owner).map((row) => [
-    ownerFilterKey(row), {
-      value: ownerFilterKey(row),
-      label: `${ownerDisplay(row)}${row.owner_member_id ? "" : "（待重新指派）"}`,
-    },
+  const ownerOptions = [...new Map(rows.flatMap(issueOwnerFilters).map((option) => [
+    option.value, option,
   ])).values()].sort((a, b) => a.label.localeCompare(b.label, "zh-TW"));
   const filtered = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("zh-TW");
@@ -677,15 +670,15 @@ function IssueRecordsTable({ rows, onEdit, projectId }: { rows: Row[]; onEdit: (
       statuses.includes(row.status) &&
       (!kind || row.kind === kind) &&
       (!priority || row.priority === priority) &&
-      (!owner || (owner === "__missing__" ? !row.owner : ownerFilterKey(row) === owner)) &&
+      (!owner || (owner === "__missing__" ? !issueOwnerFilters(row).length : issueOwnerFilters(row).some((option) => option.value === owner))) &&
       (!dueFrom || (row.due && row.due >= dueFrom)) &&
       (!dueTo || (row.due && row.due <= dueTo)) &&
-      (!query || [row.number, row.title, ownerDisplay(row), row.description, row.action, row.decision]
+      (!query || [row.number, row.title, issueOwnerDisplay(row), row.description, row.action, row.decision]
         .some((value) => String(value || "").toLocaleLowerCase("zh-TW").includes(query)))
     );
     return matches.sort((a, b) => {
-      const left = String(sortKey === "owner" ? ownerDisplay(a) : a[sortKey] ?? "").trim();
-      const right = String(sortKey === "owner" ? ownerDisplay(b) : b[sortKey] ?? "").trim();
+      const left = String(sortKey === "owner" ? issueOwnerDisplay(a) : a[sortKey] ?? "").trim();
+      const right = String(sortKey === "owner" ? issueOwnerDisplay(b) : b[sortKey] ?? "").trim();
       if (!left || !right) {
         if (!left && right) return 1;
         if (left && !right) return -1;
@@ -880,6 +873,8 @@ function RecordModal({
   const [form, setForm] = useState<Row>({
     ...defaults[kind],
     ...row,
+    ...(kind === "issues" ? { owner_member_ids: row?.owner_member_ids?.length
+      ? row.owner_member_ids : row?.owner_member_id ? [row.owner_member_id] : [] } : {}),
     ...(kind === "projects" && row?.tax_basis === "unknown" ? { tax_basis: "" } : {}),
     ...(kind !== "projects" ? { project_id: pid } : {}),
   });
@@ -919,6 +914,10 @@ function RecordModal({
     (member.active || member.id === form.owner_member_id) &&
     (member.role || "__unassigned__") === ownerRole
   ).sort((a, b) => String(a.person).localeCompare(String(b.person), "zh-TW"));
+  const issueOwnerIds: string[] = form.owner_member_ids || [];
+  const issueOwnerChoices = ownerMembers.filter((member) => member.active || issueOwnerIds.includes(member.id))
+    .sort((a, b) => String(a.role || "").localeCompare(String(b.role || ""), "zh-TW") ||
+      personDisplay(a.person, a.alias).localeCompare(personDisplay(b.person, b.alias), "zh-TW"));
   const legacyOwner = isExisting && form.owner && !form.owner_member_id ? String(form.owner) : "";
   const suggestedOwner = legacyOwner && ownerMembers.find((member) =>
     member.active && [member.person, member.alias].some((value) =>
@@ -963,6 +962,7 @@ function RecordModal({
       if (hasOwner) {
         body.owner = form.owner || "";
         body.owner_member_id = form.owner_member_id || "";
+        if (kind === "issues") body.owner_member_ids = issueOwnerIds;
       }
       if (kind !== "projects") body.project_id = pid;
       if (isExisting) {
@@ -1039,14 +1039,42 @@ function RecordModal({
             </button>
           )}
           <div className="form-grid">
-            {schemas[kind].map((f) => (
-              <label
-                className={f.type === "textarea" ? "wide" : ""}
+            {schemas[kind].map((f) => {
+              const Wrapper = kind === "issues" && f.key === "owner" ? "div" : "label";
+              return <Wrapper
+                className={kind === "issues" && f.key === "owner" ? "issue-owner-field" : f.type === "textarea" ? "wide" : ""}
                 key={f.key}
               >
                 {f.label}
                 {f.required && <b className="required"> *</b>}
-                {hasOwner && f.key === "owner" ? (
+                {kind === "issues" && f.key === "owner" ? (
+                  <div className="issue-owner-picker">
+                    <div className="issue-owner-options">
+                      {issueOwnerChoices.map((member) => <label key={member.id} className="issue-owner-option">
+                        <input type="checkbox" checked={issueOwnerIds.includes(member.id)}
+                          onChange={(e) => {
+                            const selected = e.target.checked
+                              ? [...issueOwnerIds, member.id]
+                              : issueOwnerIds.filter((id) => id !== member.id);
+                            setForm({ ...form, owner_member_ids: selected, owner_member_id: "", owner: "" });
+                          }} />
+                        <span>{personDisplay(member.person, member.alias)}
+                          {member.alias && <small>（{member.person}）</small>}
+                          {member.role && <small> · {member.role}</small>}
+                          {!member.active && <small> · 已停用</small>}
+                        </span>
+                      </label>)}
+                    </div>
+                    <small className="field-hint">最新負責人：{issueOwnerIds.map((id) => {
+                      const member = ownerMembers.find((candidate) => candidate.id === id);
+                      return member ? personDisplay(member.person, member.alias) : "";
+                    }).filter(Boolean).join("、") || legacyOwner || "未指定"}</small>
+                    {legacyOwner && <small className="field-hint">原負責人：{legacyOwner}（待重新指派）
+                      {suggestedOwner && `；可能對應 ${personDisplay(suggestedOwner.person, suggestedOwner.alias)}，請自行確認`}
+                    </small>}
+                    {!issueOwnerChoices.length && <small className="field-hint">請先新增專案成員。</small>}
+                  </div>
+                ) : hasOwner && f.key === "owner" ? (
                   <div className="owner-picker">
                     <select aria-label="負責人角色" value={ownerRole} disabled={!ownerMembers.length}
                       onChange={(e) => {
@@ -1173,8 +1201,8 @@ function RecordModal({
                     }
                   />
                 )}
-              </label>
-            ))}
+              </Wrapper>;
+            })}
           </div>
           {kind === "projects" && (
             <section className="other-cost-editor" ref={costEditorRef}>

@@ -117,13 +117,6 @@ def make_pptx(snapshot, sections):
         p.font.size, p.font.name, p.font.color.rgb = Pt(size), "Microsoft JhengHei", color
         return box
 
-    def same_issue_owner(a, b):
-        if a.get("owner_member_id") and a.get("owner_member_id") == b.get("owner_member_id"):
-            return True
-        label_a = a.get("owner_alias") or a.get("owner") or "未指定"
-        label_b = b.get("owner_alias") or b.get("owner") or "未指定"
-        return str(label_a).strip().casefold() == str(label_b).strip().casefold()
-
     def issue_timeline(rows):
         if not rows:
             return
@@ -165,7 +158,7 @@ def make_pptx(snapshot, sections):
                 created, due = row.get("created", "")[:10], row.get("due")
                 if not created or not due:
                     schedule = "未設定期限" if not due else "未設定建立日"
-                    owner = row.get("owner_alias") or row.get("owner") or "未指定"
+                    owner = row.get("owner_display") or row.get("owner_alias") or row.get("owner") or "未指定"
                     text(s, schedule if snapshot["external"] else f"{schedule} · 負責人：{owner}",
                          left, y, chart_width, 0.28, 9)
                     continue
@@ -216,14 +209,11 @@ def make_pptx(snapshot, sections):
                     bar.fill.solid()
                     bar.fill.fore_color.rgb = colors.get(event.get("status"), colors["open"])
                     bar.line.fill.background()
-                    owner_run_end = segment_index == len(collapsed) - 1 or not same_issue_owner(
-                        event, collapsed[segment_index + 1][1]
-                    )
-                    if not snapshot["external"] and owner_run_end and segment_width * width >= 0.28:
-                        person = event.get("owner_alias") or event.get("owner") or ""
+                    if not snapshot["external"] and segment_index == len(collapsed) - 1 and segment_width * width >= 0.28:
+                        person = row.get("owner_display") or row.get("owner_alias") or row.get("owner") or ""
                         if person:
                             badge_width = min(segment_width * width - 0.04, max(0.24, len(person) * 0.09 + 0.12))
-                            badge = text(s, clipped(person, 12), x + offset * width + 0.02,
+                            badge = text(s, clipped(person, 36), x + offset * width + 0.02,
                                          y + 0.045, badge_width, 0.16, 7)
                             badge.fill.solid()
                             badge.fill.fore_color.rgb = RGBColor(250, 252, 253)
@@ -267,9 +257,11 @@ def make_pptx(snapshot, sections):
 
         def value(item, key):
             v = item.get(key)
+            if key == "owner" and item.get("owner_display"):
+                v = item["owner_display"]
             if key == "owner" and not v:
                 return "未指定"
-            if key == "owner" and item.get("owner_alias"):
+            if key == "owner" and not item.get("owner_display") and item.get("owner_alias"):
                 v = item["owner_alias"]
             return (
                 "待確認"
