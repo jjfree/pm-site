@@ -139,9 +139,12 @@ def make_pptx(snapshot, sections):
         end_day = datetime.fromisoformat(high).date()
         span = max(1, (end_day - start_day).days + 1)
         pages = [rows[i:i + 8] for i in range(0, len(rows), 8)]
+        left, top = 4.35, 1.75
+        owner_width = max((len(row.get("owner_display") or row.get("owner_alias") or row.get("owner") or "") * 0.09 + 0.12
+                           for row in rows), default=0) if not snapshot["external"] else 0
+        chart_width = min(8.15, max(5.5, 13.15 - left - owner_width))
         for page_index, page_rows in enumerate(pages):
             s = slide("事項追蹤甘特圖" + (f" ({page_index + 1}/{len(pages)})" if len(pages) > 1 else ""))
-            left, chart_width, top = 4.35, 8.15, 1.75
             text(s, f"{low} — {high}", left, 1.28, chart_width, 0.3, 10)
             legend_x = 0.75
             for status, color in colors.items():
@@ -209,12 +212,18 @@ def make_pptx(snapshot, sections):
                     bar.fill.solid()
                     bar.fill.fore_color.rgb = colors.get(event.get("status"), colors["open"])
                     bar.line.fill.background()
-                    if not snapshot["external"] and segment_index == len(collapsed) - 1 and segment_width * width >= 0.28:
+                    if not snapshot["external"] and segment_index == len(collapsed) - 1:
                         person = row.get("owner_display") or row.get("owner_alias") or row.get("owner") or ""
                         if person:
-                            badge_width = min(segment_width * width - 0.04, max(0.24, len(person) * 0.09 + 0.12))
-                            badge = text(s, clipped(person, 36), x + offset * width + 0.02,
+                            badge_left = x + offset * width + 0.02
+                            badge_width = min(13.15 - badge_left, max(0.24, len(person) * 0.09 + 0.12))
+                            badge = text(s, person, badge_left,
                                          y + 0.045, badge_width, 0.16, 7)
+                            badge.text_frame.word_wrap = False
+                            badge.text_frame.margin_left = Inches(0.03)
+                            badge.text_frame.margin_right = Inches(0.03)
+                            badge.text_frame.margin_top = 0
+                            badge.text_frame.margin_bottom = 0
                             badge.fill.solid()
                             badge.fill.fore_color.rgb = RGBColor(250, 252, 253)
                             badge.line.fill.background()

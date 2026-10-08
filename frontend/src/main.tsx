@@ -464,6 +464,9 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
     label: new Date((firstDay + offset) * 86400000).toISOString().slice(0, 10),
     position: `${offset / rangeDays * 100}%`,
   })) : [];
+  const ownerGutter = rows.reduce((width, row) => Math.max(
+    width, (issueOwnerDisplay(row) || "未指定").length * 10 + 16,
+  ), 80);
   return (
     <section className="panel issue-timeline-panel">
       <div className="panel-head">
@@ -475,7 +478,9 @@ function IssueTimeline({ rows }: { rows: Row[] }) {
         </span>)}
       </div>
       <div className="issue-timeline-scroll">
-        <div className="issue-timeline" style={{ minWidth: `${Math.max(700, 263 + rangeDays * 8)}px` }}>
+        <div className="issue-timeline" style={{
+          minWidth: `${Math.max(700, 263 + rangeDays * 8)}px`, paddingRight: `${ownerGutter}px`,
+        }}>
           <div className="timeline-axis"><div />
             <div className="timeline-axis-dates">{ticks.length ? ticks.map((tick, i) => <span key={i} style={{ left: tick.position }}>{tick.label}</span>) : <span>尚無可排程日期</span>}</div>
           </div>
