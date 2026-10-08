@@ -4,8 +4,9 @@ import sqlite3
 from zipfile import ZipFile
 
 from openpyxl import load_workbook
+from PIL import Image
 from pptx import Presentation
-from pptx.util import Inches
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 from app.analytics import evaluate_scenario, summarize
 from app.db import Store
 from app.models import Project, Rate, Scenario, TimeEntry
@@ -15,6 +16,15 @@ from conftest import body
 
 def model(cls, **kw):
     return cls(**kw).model_dump(mode="json")
+
+
+def gantt_picture(pptx):
+    slide = next(slide for slide in pptx.slides if any(
+        shape.has_text_frame and shape.text.startswith("事項追蹤甘特圖") for shape in slide.shapes
+    ))
+    pictures = [shape for shape in slide.shapes if shape.shape_type == MSO_SHAPE_TYPE.PICTURE]
+    assert len(pictures) == 1
+    return Image.open(io.BytesIO(pictures[0].image.blob))
 
 
 def test_synthetic_demo_is_complete_and_only_for_empty_database(client):
@@ -164,7 +174,10 @@ def test_issue_timeline_tracks_status_and_prioritizes_assignee_alias(client, pro
     pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
     texts = [shape.text for slide in pptx.slides for shape in slide.shapes if shape.has_text_frame]
     assert "事項追蹤甘特圖" in texts
-    assert texts.count("Alex-New") == 1
+    assert gantt_picture(pptx).size == (2380, 1080)
+    cells = [cell.text for slide in pptx.slides for shape in slide.shapes
+             if shape.has_table for table_row in shape.table.rows for cell in table_row.cells]
+    assert cells.count("Alex-New") == 1
     assert "Alex" not in texts
     assert "林小明" not in texts
     public = client.post("/api/reports", json={
@@ -196,11 +209,8 @@ def test_gantt_shows_same_owner_once_when_free_text_is_linked(client, project):
     assert [event["owner_alias"] or event["owner"] for event in history] == ["Ted", "Ted"]
     report = client.post("/api/reports", json={"project_id": project["id"], "sections": ["issues"]}).json()
     pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
-    texts = [shape.text for slide in pptx.slides for shape in slide.shapes if shape.has_text_frame]
-    assert texts.count("Ted") == 1
-    owner_badge = next(shape for slide in pptx.slides for shape in slide.shapes
-                       if shape.has_text_frame and shape.text == "Ted")
-    assert abs(owner_badge.left - Inches(4.35 + 4 / 20 * 8.15 + 0.02)) < Inches(0.05)
+    assert report["snapshot"]["issues"][0]["owner_display"] == "Ted"
+    assert gantt_picture(pptx).size == (2380, 1080)
 
 
 def test_issue_multiple_owners_show_only_latest_set(client, project):
@@ -250,7 +260,8 @@ def test_issue_multiple_owners_show_only_latest_set(client, project):
              if shape.has_table for table_row in shape.table.rows for cell in table_row.cells]
     assert "Alex、Pat" in cells
     texts = [shape.text for slide in pptx.slides for shape in slide.shapes if shape.has_text_frame]
-    assert texts.count("Alex、Pat") == 1
+    assert gantt_picture(pptx).size == (2380, 1080)
+    assert texts.count("Alex、Pat") == 0
     assert "Ted" not in texts
     external = client.post("/api/reports", json={
         "project_id": pid, "external": True, "sections": ["issues"],
@@ -496,6 +507,8 @@ def test_aliases_appear_in_records_exports_and_internal_report_only(client, proj
     assert report["snapshot"]["project"]["owner_alias"] == "Alex"
     assert report["snapshot"]["issues"][0]["owner_alias"] == "Alex"
     pptx = Presentation(io.BytesIO(client.get(f"/api/reports/{report['id']}/pptx").content))
+    cover_texts = [shape.text for shape in pptx.slides[0].shapes if shape.has_text_frame]
+    assert "專案負責人：Alex" in cover_texts
     cells = [cell.text for slide in pptx.slides for shape in slide.shapes
              if shape.has_table for row in shape.table.rows for cell in row.cells]
     assert "Alex" in cells
@@ -503,6 +516,9 @@ def test_aliases_appear_in_records_exports_and_internal_report_only(client, proj
     public = client.post("/api/reports", json={"project_id": pid, "external": True}).json()
     assert "Alex" not in json.dumps(public["snapshot"])
     public_pptx = client.get(f"/api/reports/{public['id']}/pptx").content
+    public_slides = Presentation(io.BytesIO(public_pptx))
+    assert not any("專案負責人" in shape.text for shape in public_slides.slides[0].shapes
+                   if shape.has_text_frame)
     with ZipFile(io.BytesIO(public_pptx)) as archive:
         assert all(b"Alex" not in archive.read(name) for name in archive.namelist() if name.endswith(".xml"))
 

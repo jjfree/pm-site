@@ -16,7 +16,10 @@ def instance_id(directory=None):
 
 def revision_id():
     digest = hashlib.sha256()
-    for relative in ("app/api.py", "app/models.py", "app/analytics.py", "app/static/index.html"):
+    for relative in (
+        "app/api.py", "app/models.py", "app/analytics.py", "app/reports.py", "app/gantt_image.py",
+        "app/static/index.html",
+    ):
         path = ROOT / relative
         digest.update(relative.encode())
         digest.update(path.read_bytes())
